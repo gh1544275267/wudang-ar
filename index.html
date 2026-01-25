@@ -3,27 +3,30 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>武当气韵 AR</title>
-    <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+    <title>武当气韵 AR (国内加速版)</title>
+    <!-- 替换为国内镜像源的 A-Frame -->
+    <script src="https://cdn.staticfile.org/aframe/1.4.0/aframe.min.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; font-family: sans-serif; }
+        body { margin: 0; overflow: hidden; font-family: "PingFang SC", sans-serif; }
         .ui-panel {
             position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
             display: none; gap: 15px; z-index: 100;
         }
         button {
-            background: rgba(0,0,0,0.8); color: #d4af37; border: 1px solid #d4af37;
-            padding: 15px 25px; border-radius: 30px; font-size: 16px; font-weight: bold;
+            background: rgba(0,0,0,0.85); color: #d4af37; border: 1px solid #d4af37;
+            padding: 12px 20px; border-radius: 30px; font-size: 14px; font-weight: bold;
+            box-shadow: 0 0 10px rgba(212,175,55,0.3);
         }
         #instructions {
-            position: fixed; top: 20px; left: 0; width: 100%; text-align: center;
-            color: white; background: rgba(0,0,0,0.5); padding: 10px 0; z-index: 100;
+            position: fixed; top: 0; left: 0; width: 100%; text-align: center;
+            color: #d4af37; background: rgba(0,0,0,0.7); padding: 15px 0; z-index: 100;
+            font-size: 14px; letter-spacing: 1px;
         }
     </style>
 </head>
 <body>
 
-    <div id="instructions">正在初始化... 请左右缓慢移动手机扫描地面</div>
+    <div id="instructions">正在感应地面... 请缓慢左右移动手机</div>
 
     <div class="ui-panel" id="controls">
         <button onclick="changeMode('breath')">调息</button>
@@ -31,20 +34,13 @@
         <button onclick="changeMode('strike')">发力</button>
     </div>
 
-    <!-- AR 场景设置 -->
     <a-scene webxr="requiredFeatures: hit-test, local-floor; optionalFeatures: dom-overlay; overlayElement: #controls">
         <a-camera position="0 1.6 0"></a-camera>
-
-        <!-- 放置准星 -->
         <a-entity id="reticle" visible="false">
             <a-ring color="#d4af37" rotation="-90 0 0" radius-inner="0.08" radius-outer="0.12"></a-ring>
         </a-entity>
-
-        <!-- 武当实体内容 -->
         <a-entity id="wudang-content" visible="false">
-            <!-- 底盘八卦 -->
-            <a-circle rotation="-90 0 0" radius="0.8" material="color: #d4af37; transparent: true; opacity: 0.5; src: url(https://img.alicdn.com/imgextra/i3/O1CN01SclzO61XW9P1q7Ie7_!!6000000002930-2-tps-512-512.png)"></a-circle>
-            <!-- 粒子系统占位符 -->
+            <a-circle rotation="-90 0 0" radius="0.8" material="color: #d4af37; transparent: true; opacity: 0.6; src: url(https://img.alicdn.com/imgextra/i3/O1CN01SclzO61XW9P1q7Ie7_!!6000000002930-2-tps-512-512.png)"></a-circle>
             <a-entity id="particles-node"></a-entity>
         </a-entity>
     </a-scene>
@@ -58,7 +54,6 @@
         let mode = 'breath';
         let isPlaced = false;
 
-        // WebXR Hit-test 核心逻辑
         scene.addEventListener('enter-vr', () => {
             const session = scene.xrSession;
             session.addEventListener('select', () => {
@@ -74,7 +69,6 @@
             });
         });
 
-        // 渲染循环更新准星
         scene.addEventListener('render-target-loaded', () => {
             scene.renderer.setAnimationLoop((time, frame) => {
                 if (isPlaced || !frame) return;
@@ -82,19 +76,18 @@
                 if (!session) return;
                 const refSpace = scene.renderer.xr.getReferenceSpace();
                 const hitTestSources = scene.systems.webxr.session.hitTestSources;
-                if (hitTestSources.length > 0) {
+                if (hitTestSources && hitTestSources.length > 0) {
                     const results = frame.getHitTestResults(hitTestSources[0]);
                     if (results.length > 0) {
                         const pose = results[0].getPose(refSpace);
                         reticle.setAttribute('visible', true);
                         reticle.setAttribute('position', pose.transform.position);
-                        instructions.innerText = "已感知地面，点击屏幕中心开启气场";
+                        instructions.innerText = "已锁定地面，点击屏幕开启气场";
                     }
                 }
             });
         });
 
-        // 简易粒子逻辑
         function startParticleSim() {
             const container = document.querySelector('#particles-node').object3D;
             const count = 1000;
@@ -119,7 +112,6 @@
             }
             frame();
         }
-
         function changeMode(m) { mode = m; if(m === 'strike') setTimeout(()=>mode='breath', 800); }
     </script>
 </body>
