@@ -3,144 +3,165 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>武当 · 气韵空间</title>
+    <title>武当 · 幻影导师</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/aframe/1.4.2/aframe.min.js"></script>
     <style>
-        :root { --gold: #d4af37; --glass: rgba(0, 0, 0, 0.4); }
-        body { margin: 0; overflow: hidden; background: #000; font-family: "PingFang SC", "STHeiti", sans-serif; }
+        :root { --gold: #d4af37; --cyan: #4dcad8; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: "PingFang SC", sans-serif; }
         
-        /* 启动界面 */
-        #overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            background: radial-gradient(circle, #1a1a1a 0%, #000 100%); z-index: 1000; transition: 0.8s;
+        /* 引导图层 */
+        #instruction-layer {
+            position: fixed; top: 10vh; width: 100%; text-align: center;
+            color: #fff; z-index: 100; pointer-events: none; transition: 0.5s;
         }
-        .title { color: var(--gold); font-size: 26px; letter-spacing: 10px; font-weight: 200; margin-bottom: 40px; }
-        .start-btn {
-            background: none; border: 1px solid var(--gold); color: var(--gold);
-            padding: 12px 40px; border-radius: 2px; font-size: 14px; cursor: pointer; letter-spacing: 4px;
-            transition: 0.3s;
-        }
-        .start-btn:hover { background: var(--gold); color: #000; }
+        .move-name { font-size: 20px; letter-spacing: 6px; color: var(--gold); margin-bottom: 5px; text-shadow: 0 0 10px rgba(0,0,0,1); }
+        .move-detail { font-size: 12px; opacity: 0.8; letter-spacing: 2px; background: rgba(0,0,0,0.4); display: inline-block; padding: 4px 12px; border-radius: 10px; }
 
-        /* 极简底部交互区 */
+        /* 呼吸引导环 */
+        #breath-guide {
+            position: fixed; top: 30px; right: 30px; width: 40px; height: 40px;
+            border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; z-index: 100;
+        }
+        #breath-fill {
+            width: 100%; height: 100%; border-radius: 50%;
+            background: var(--cyan); transform: scale(0.5); opacity: 0.5;
+            transition: transform 3s ease-in-out, background 3s;
+        }
+
+        /* 底部交互区 */
         .ui-panel {
             position: fixed; bottom: 5vh; left: 0; width: 100%;
-            display: none; justify-content: center; align-items: flex-end; gap: 35px; z-index: 100;
+            display: flex; justify-content: center; align-items: flex-end; gap: 25px; z-index: 1000;
         }
-        
-        /* 竖排文字按钮设计 */
-        .control-item {
-            display: flex; flex-direction: column; align-items: center; cursor: pointer;
-            transition: transform 0.2s;
-        }
-        .control-item:active { transform: scale(0.9); }
-        
+        .control-item { display: flex; flex-direction: column; align-items: center; cursor: pointer; }
         .circle-rim {
-            width: 44px; height: 44px; border: 1px solid var(--gold); border-radius: 50%;
+            width: 50px; height: 50px; border: 1px solid var(--gold); border-radius: 50%;
             display: flex; align-items: center; justify-content: center;
-            background: var(--glass); backdrop-filter: blur(4px); margin-bottom: 8px;
-            box-shadow: 0 0 10px rgba(212,175,55,0.2);
+            background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); margin-bottom: 10px;
         }
-        .inner-dot { width: 4px; height: 4px; background: var(--gold); border-radius: 50%; }
+        .label { writing-mode: vertical-rl; color: #fff; font-size: 12px; letter-spacing: 4px; opacity: 0.9; }
         
-        .label {
-            writing-mode: vertical-rl; color: #fff; font-size: 11px;
-            letter-spacing: 4px; opacity: 0.8; text-shadow: 0 2px 4px rgba(0,0,0,0.8);
-        }
-        
-        /* 辅助引导 */
-        #hint {
-            position: fixed; top: 30px; width: 100%; text-align: center;
-            color: rgba(255,255,255,0.5); font-size: 12px; letter-spacing: 2px; display: none;
+        #overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000; z-index: 2000; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; transition: 1s;
         }
     </style>
 </head>
 <body>
 
     <div id="overlay">
-        <div class="title">武当 · 气韵空间</div>
-        <button class="start-btn" onclick="enterAR()">感应天地</button>
+        <div style="color:var(--gold); font-size: 24px; letter-spacing: 8px; margin-bottom: 30px;">武当 · 幻影导师</div>
+        <button onclick="enterAR()" style="background:none; border:1px solid var(--gold); color:var(--gold); padding:10px 30px; cursor:pointer;">开启传功</button>
     </div>
 
-    <div id="hint">气随心转 · 意在身前</div>
+    <!-- 教学引导层 -->
+    <div id="instruction-layer" style="display:none;">
+        <div class="move-name" id="cur-move">起势 · 调息</div>
+        <div class="move-detail" id="cur-detail">虚领顶劲，气沉丹田</div>
+    </div>
 
-    <div class="ui-panel" id="ui">
-        <div class="control-item" onclick="setMode('breath')">
-            <div class="circle-rim"><div class="inner-dot"></div></div>
-            <div class="label">聚气调息</div>
+    <!-- 呼吸引导 -->
+    <div id="breath-guide"><div id="breath-fill"></div></div>
+
+    <!-- 按钮 -->
+    <div class="ui-panel" id="ui" style="display:none;">
+        <div class="control-item" onclick="setMove('breath')">
+            <div class="circle-rim" style="border-color:var(--cyan);"><div style="width:6px; height:6px; background:var(--cyan); border-radius:50%;"></div></div>
+            <div class="label">入门调息</div>
         </div>
-        <div class="control-item" onclick="setMode('flow')">
-            <div class="circle-rim"><div class="inner-dot"></div></div>
-            <div class="label">圆转连绵</div>
+        <div class="control-item" onclick="setMove('cloud')">
+            <div class="circle-rim"><div style="width:6px; height:6px; background:var(--gold); border-radius:50%;"></div></div>
+            <div class="label">云手轨迹</div>
         </div>
-        <div class="control-item" onclick="setMode('strike')">
-            <div class="circle-rim"><div class="inner-dot"></div></div>
-            <div class="label">瞬时发力</div>
+        <div class="control-item" onclick="setMove('strike')">
+            <div class="circle-rim"><div style="width:10px; height:2px; background:var(--gold);"></div></div>
+            <div class="label">发劲转折</div>
         </div>
     </div>
 
     <a-scene webxr="optionalFeatures: dom-overlay; overlayElement: #ui" renderer="antialias: true; alpha: true">
-        <!-- 核心气场 -->
-        <a-entity id="wudang-core" visible="false">
-            <a-entity id="bagua-plate" rotation="-90 0 0" position="0 -0.5 0">
-                <a-circle radius="0.5" material="src: url(https://img.alicdn.com/imgextra/i3/O1CN01SclzO61XW9P1q7Ie7_!!6000000002930-2-tps-512-512.png); transparent: true; opacity: 0.3; color: #d4af37"></a-circle>
-            </a-entity>
+        <a-entity id="wudang-master" visible="false">
+            <!-- 招式引导线 (教学属性的核心) -->
+            <a-entity id="path-guide" line="color: #d4af37; opacity: 0.3"></a-entity>
+            <!-- 能量粒子群 -->
             <a-entity id="particle-node"></a-entity>
-            <a-light type="point" color="#ffd700" intensity="1.2" distance="3"></a-light>
+            <!-- 中心意念核 -->
+            <a-sphere radius="0.05" material="color: #fff; emissive: #ffd700; emissiveIntensity: 2"></a-sphere>
         </a-entity>
         <a-camera look-controls="enabled: true"></a-camera>
     </a-scene>
 
     <script>
         let mode = 'breath';
-        const scene = document.querySelector('a-scene');
-        const core = document.querySelector('#wudang-core');
-        const overlay = document.querySelector('#overlay');
-        const ui = document.querySelector('#ui');
-        const hint = document.querySelector('#hint');
-
+        let scene = document.querySelector('a-scene');
+        let master = document.querySelector('#wudang-master');
+        let breathFill = document.querySelector('#breath-fill');
+        
         function enterAR() {
             scene.enterVR();
-            overlay.style.opacity = '0';
-            setTimeout(() => {
-                overlay.style.display = 'none';
-                ui.style.display = 'flex';
-                hint.style.display = 'block';
-                core.setAttribute('visible', 'true');
-                
-                // 定位在视野中心前方 1.5 米处
-                const camera = document.querySelector('[camera]');
-                const pos = new THREE.Vector3(0, 0, -1.5);
-                pos.applyQuaternion(camera.object3D.quaternion);
-                pos.add(camera.object3D.position);
-                core.setAttribute('position', pos);
-                
-                initParticles();
-            }, 600);
+            document.querySelector('#overlay').style.display = 'none';
+            document.querySelector('#ui').style.display = 'flex';
+            document.querySelector('#instruction-layer').style.display = 'block';
+            
+            master.setAttribute('visible', 'true');
+            const cam = document.querySelector('[camera]');
+            const pos = new THREE.Vector3(0, 0, -2);
+            pos.applyQuaternion(cam.object3D.quaternion);
+            pos.add(cam.object3D.position);
+            master.setAttribute('position', pos);
+            
+            initAdvancedParticles();
+            runBreathLoop();
         }
 
-        function initParticles() {
+        // 呼吸循环引导 (教学)
+        function runBreathLoop() {
+            setInterval(() => {
+                breathFill.style.transform = 'scale(1.2)';
+                breathFill.style.background = '#4dcad8'; // 吸气
+                setTimeout(() => {
+                    breathFill.style.transform = 'scale(0.4)';
+                    breathFill.style.background = '#d4af37'; // 呼气
+                }, 3000);
+            }, 6000);
+        }
+
+        function setMove(m) {
+            mode = m;
+            const title = document.querySelector('#cur-move');
+            const detail = document.querySelector('#cur-detail');
+            
+            if(m === 'breath') {
+                title.innerText = "起势 · 调息";
+                detail.innerText = "虚领顶劲，气沉丹田";
+            } else if(m === 'cloud') {
+                title.innerText = "连绵 · 云手";
+                detail.innerText = "以腰带手，圆转不断";
+            } else if(m === 'strike') {
+                title.innerText = "发劲 · 冲拳";
+                detail.innerText = "极静而动，力发于根";
+                setTimeout(() => setMove('breath'), 2000);
+            }
+        }
+
+        function initAdvancedParticles() {
             const container = document.querySelector('#particle-node').object3D;
-            const count = 1500;
+            const count = 5000; // 极大量粒子增强震撼感
             const geo = new THREE.BufferGeometry();
             const pos = new Float32Array(count * 3);
-            const vels = [];
+            const colors = new Float32Array(count * 3);
 
             for(let i=0; i<count; i++) {
-                resetPos(pos, i);
-                vels.push(new THREE.Vector3(0,0,0));
-            }
-
-            function resetPos(arr, i) {
-                arr[i*3] = (Math.random()-0.5) * 1.2;
-                arr[i*3+1] = (Math.random()-0.5) * 1.2;
-                arr[i*3+2] = (Math.random()-0.5) * 1.2;
+                pos[i*3] = (Math.random()-0.5)*2;
+                pos[i*3+1] = (Math.random()-0.5)*2;
+                pos[i*3+2] = (Math.random()-0.5)*2;
             }
 
             geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
             const mat = new THREE.PointsMaterial({
-                color: 0xd4af37, size: 0.015, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending
+                size: 0.015, transparent: true, opacity: 0.6, 
+                blending: THREE.AdditiveBlending, color: 0xd4af37
             });
             const points = new THREE.Points(geo, mat);
             container.add(points);
@@ -150,44 +171,36 @@
                 const time = Date.now() * 0.001;
 
                 for(let i=0; i<count; i++) {
-                    const i3 = i * 3;
+                    let i3 = i * 3;
+                    
                     if(mode === 'breath') {
-                        // 气息律动：柔和的径向收放
-                        const r = Math.sqrt(arr[i3]**2 + arr[i3+1]**2 + arr[i3+2]**2);
-                        const force = (Math.sin(time * 1.5) * 0.001);
-                        arr[i3] += arr[i3] * force;
-                        arr[i3+1] += arr[i3+1] * force;
-                        arr[i3+2] += arr[i3+2] * force;
+                        // 教学点：展示气的汇聚
+                        let factor = (Math.sin(time * 1.5) + 1.2) * 0.3;
+                        arr[i3] *= 0.98; arr[i3+1] *= 0.98; arr[i3+2] *= 0.98; 
+                        arr[i3] += Math.sin(i + time) * 0.01;
                     } 
-                    else if(mode === 'flow') {
-                        // 圆转：复杂的双螺旋旋转
-                        let x = arr[i3], z = arr[i3+2];
-                        arr[i3] = x * 0.985 - z * 0.05;
-                        arr[i3+2] = x * 0.05 + z * 0.985;
-                        arr[i3+1] += Math.sin(time + x*2) * 0.005;
+                    else if(mode === 'cloud') {
+                        // 教学点：云手的“圆轨迹”
+                        let x = arr[i3], y = arr[i3+1], z = arr[i3+2];
+                        let speed = 0.05;
+                        arr[i3] = x * Math.cos(speed) - z * Math.sin(speed);
+                        arr[i3+2] = x * Math.sin(speed) + z * Math.cos(speed);
+                        arr[i3+1] += Math.sin(time + x*2) * 0.01;
                     }
                     else if(mode === 'strike') {
-                        // 发力：从中心向外的高速粒子
-                        arr[i3] *= 1.12; arr[i3+1] *= 1.12; arr[i3+2] *= 1.12;
-                        if(Math.abs(arr[i3]) > 4) resetPos(arr, i);
+                        // 教学点：劲力的爆发瞬间
+                        arr[i3] *= 1.15; arr[i3+1] *= 1.15; arr[i3+2] *= 1.15;
+                        if(Math.abs(arr[i3]) > 5) {
+                            arr[i3] = (Math.random()-0.5)*0.2;
+                            arr[i3+1] = (Math.random()-0.5)*0.2;
+                            arr[i3+2] = (Math.random()-0.5)*0.2;
+                        }
                     }
                 }
                 points.geometry.attributes.position.needsUpdate = true;
                 requestAnimationFrame(animate);
             }
             animate();
-        }
-
-        function setMode(m) {
-            mode = m;
-            // 点击反馈：发力效果下背景闪烁一下
-            if(m === 'strike') {
-                document.body.style.backgroundColor = 'rgba(212,175,55,0.1)';
-                setTimeout(() => { 
-                    document.body.style.backgroundColor = 'transparent';
-                    mode = 'breath'; 
-                }, 600);
-            }
         }
     </script>
 </body>
