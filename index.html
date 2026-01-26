@@ -3,146 +3,156 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>武当气韵 AR</title>
-    <!-- 使用官方推荐的稳定版 CDN -->
+    <title>武当 · 悬浮气韵</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/aframe/1.4.2/aframe.min.js"></script>
     <style>
-        body { margin: 0; background-color: #000; color: #d4af37; }
-        #overlay-text {
-            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            text-align: center; z-index: 9999; width: 80%;
+        body { margin: 0; overflow: hidden; background: #000; font-family: "PingFang SC", sans-serif; }
+        #overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            background: rgba(0,0,0,0.8); z-index: 1000; transition: 0.5s;
         }
-        .btn-group {
-            position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
-            display: none; gap: 10px; z-index: 1000;
+        .title { color: #d4af37; font-size: 24px; letter-spacing: 8px; margin-bottom: 20px; text-shadow: 0 0 15px rgba(212,175,55,0.5); }
+        .start-btn {
+            background: none; border: 1px solid #d4af37; color: #d4af37;
+            padding: 15px 40px; border-radius: 30px; font-size: 16px; cursor: pointer;
         }
-        button {
-            background: rgba(0,0,0,0.8); color: #d4af37; border: 1px solid #d4af37;
-            padding: 10px 15px; border-radius: 20px; font-size: 14px;
+        .ui-panel {
+            position: fixed; bottom: 40px; left: 0; width: 100%;
+            display: none; justify-content: center; gap: 20px; z-index: 100;
         }
-        #error-msg { color: #ff4444; display: none; margin-top: 20px; font-size: 12px; }
+        .control-btn {
+            background: rgba(0,0,0,0.6); color: #d4af37; border: 1px solid #d4af37;
+            padding: 12px 20px; border-radius: 20px; font-size: 14px; backdrop-filter: blur(5px);
+        }
     </style>
 </head>
 <body>
 
-    <div id="overlay-text">
-        <div id="status-text">正在感应灵气...</div>
-        <div id="error-msg">抱歉，您的浏览器或手机硬件不支持无标记AR。<br>请尝试使用 Chrome 浏览器。</div>
-        <button id="start-ar-btn" style="display:none; margin-top:20px;">开启 AR 空间</button>
+    <div id="overlay">
+        <div class="title">武当 · 气韵空间</div>
+        <button class="start-btn" onclick="enterAR()">开启气场</button>
+        <p style="color: rgba(255,255,255,0.4); font-size: 12px; margin-top: 20px;">建议在 Chrome 或浏览器中打开</p>
     </div>
 
-    <div class="btn-group" id="ui">
-        <button onclick="changeMode('breath')">调息</button>
-        <button onclick="changeMode('flow')">圆转</button>
-        <button onclick="changeMode('strike')">发力</button>
+    <div class="ui-panel" id="ui">
+        <button class="control-btn" onclick="setMode('breath')">调息</button>
+        <button class="control-btn" onclick="setMode('flow')">转折</button>
+        <button class="control-btn" onclick="setMode('strike')">发力</button>
     </div>
 
-    <!-- AR 场景 -->
-    <a-scene webxr="requiredFeatures: hit-test, local-floor; optionalFeatures: dom-overlay; overlayElement: #ui">
-        <a-entity id="reticle" visible="false">
-            <a-ring color="#d4af37" rotation="-90 0 0" radius-inner="0.08" radius-outer="0.12"></a-ring>
-        </a-entity>
-
-        <a-entity id="content" visible="false">
-            <a-circle rotation="-90 0 0" radius="0.6" material="color: #d4af37; transparent: true; opacity: 0.5;"></a-circle>
-            <a-entity id="particles"></a-entity>
-        </a-entity>
+    <!-- AR 场景：关闭 hit-test，使用普通 AR 模式 -->
+    <a-scene webxr="optionalFeatures: dom-overlay; overlayElement: #ui" renderer="antialias: true; alpha: true">
         
-        <a-camera position="0 1.6 0"></a-camera>
+        <!-- 核心气场容器：默认放在前方 2 米处 -->
+        <a-entity id="wudang-core" position="0 1.2 -2" visible="false">
+            
+            <!-- 浮动八卦盘 -->
+            <a-entity id="bagua-plate" rotation="-90 0 0">
+                <a-ring color="#d4af37" radius-inner="0.45" radius-outer="0.5" opacity="0.8"></a-ring>
+                <a-circle radius="0.48" material="color: #d4af37; transparent: true; opacity: 0.2; src: url(https://img.alicdn.com/imgextra/i3/O1CN01SclzO61XW9P1q7Ie7_!!6000000002930-2-tps-512-512.png)"></a-circle>
+            </a-entity>
+
+            <!-- 动态粒子承载器 -->
+            <a-entity id="particle-node"></a-entity>
+
+            <!-- 环境光源 -->
+            <a-light type="point" color="#ffd700" intensity="1.5" distance="5"></a-light>
+        </a-entity>
+
+        <a-camera look-controls="enabled: true"></a-camera>
     </a-scene>
 
     <script>
-        const scene = document.querySelector('a-scene');
-        const status = document.querySelector('#status-text');
-        const startBtn = document.querySelector('#start-ar-btn');
-        const errorMsg = document.querySelector('#error-msg');
         let mode = 'breath';
+        const scene = document.querySelector('a-scene');
+        const core = document.querySelector('#wudang-core');
+        const overlay = document.querySelector('#overlay');
+        const ui = document.querySelector('#ui');
 
-        // 1. 检查 WebXR 支持情况
-        if (window.isSecureContext && navigator.xr) {
-            navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
-                if (supported) {
-                    status.innerText = "灵气感应成功";
-                    startBtn.style.display = "inline-block";
-                } else {
-                    showError();
-                }
-            });
-        } else {
-            showError();
+        function enterAR() {
+            // 进入 AR 模式
+            scene.enterVR();
+            
+            // 立即显示内容并定位在视野正前方
+            overlay.style.opacity = '0';
+            setTimeout(() => {
+                overlay.style.display = 'none';
+                ui.style.display = 'flex';
+                core.setAttribute('visible', 'true');
+                
+                // 将内容放置在当前相机面对的方向
+                const camera = document.querySelector('[camera]');
+                const position = new THREE.Vector3(0, 0, -1.8); // 1.8米远
+                position.applyQuaternion(camera.object3D.quaternion);
+                position.add(camera.object3D.position);
+                core.setAttribute('position', position);
+                
+                initParticles();
+            }, 500);
         }
-
-        function showError() {
-            status.style.display = "none";
-            errorMsg.style.display = "block";
-        }
-
-        // 2. 启动 AR
-        startBtn.onclick = () => {
-            scene.enterVR(); // 在AR模式下这就是进入AR
-            status.innerText = "请缓慢移动手机，寻找地面平原";
-            startBtn.style.display = "none";
-        };
-
-        // 3. 处理点击放置 (Hit-test)
-        scene.addEventListener('enter-vr', () => {
-            const session = scene.xrSession;
-            session.addEventListener('select', () => {
-                const reticle = document.querySelector('#reticle');
-                const content = document.querySelector('#content');
-                if (reticle.getAttribute('visible')) {
-                    content.setAttribute('position', reticle.getAttribute('position'));
-                    content.setAttribute('visible', true);
-                    reticle.setAttribute('visible', false);
-                    document.querySelector('#overlay-text').style.display = 'none';
-                    document.querySelector('#ui').style.display = 'flex';
-                    initParticles();
-                }
-            });
-        });
-
-        // 4. 实时更新准星
-        scene.addEventListener('render-target-loaded', () => {
-            scene.renderer.setAnimationLoop((time, frame) => {
-                if (!frame || document.querySelector('#content').getAttribute('visible') === 'true') return;
-                const refSpace = scene.renderer.xr.getReferenceSpace();
-                const hitTestSources = scene.systems.webxr.session.hitTestSources;
-                if (hitTestSources && hitTestSources.length > 0) {
-                    const results = frame.getHitTestResults(hitTestSources[0]);
-                    if (results.length > 0) {
-                        const pose = results[0].getPose(refSpace);
-                        const reticle = document.querySelector('#reticle');
-                        reticle.setAttribute('visible', true);
-                        reticle.setAttribute('position', pose.transform.position);
-                        status.innerText = "找到地面！点击屏幕中心放置气场";
-                    }
-                }
-            });
-        });
 
         function initParticles() {
-            const container = document.querySelector('#particles').object3D;
+            const container = document.querySelector('#particle-node').object3D;
+            const count = 1200;
             const geo = new THREE.BufferGeometry();
-            const pos = new Float32Array(600 * 3);
-            for(let i=0; i<600*3; i++) pos[i] = (Math.random()-0.5);
+            const pos = new Float32Array(count * 3);
+            const vels = [];
+
+            for(let i=0; i<count; i++) {
+                pos[i*3] = (Math.random()-0.5) * 1.5;
+                pos[i*3+1] = (Math.random()-0.5) * 1.5;
+                pos[i*3+2] = (Math.random()-0.5) * 1.5;
+                vels.push(new THREE.Vector3(0,0,0));
+            }
+
             geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-            const mat = new THREE.PointsMaterial({color: 0xd4af37, size: 0.02, transparent: true});
+            const mat = new THREE.PointsMaterial({
+                color: 0xd4af37, 
+                size: 0.02, 
+                transparent: true, 
+                opacity: 0.8,
+                blending: THREE.AdditiveBlending
+            });
             const points = new THREE.Points(geo, mat);
             container.add(points);
 
             function animate() {
                 const arr = points.geometry.attributes.position.array;
-                for(let i=0; i<200; i++){
-                    let ix=i*3, iy=ix+1, iz=ix+2;
-                    if(mode==='flow'){ let x=arr[ix], z=arr[iz]; arr[ix]=x*0.98-z*0.05; arr[iz]=x*0.05+z*0.98; }
-                    else { arr[iy] += Math.sin(Date.now()*0.002+arr[ix])*0.001; }
+                const time = Date.now() * 0.001;
+
+                for(let i=0; i<count; i++) {
+                    const i3 = i * 3;
+                    if(mode === 'breath') {
+                        // 气息：球体律动
+                        const s = 1 + Math.sin(time + arr[i3]) * 0.002;
+                        arr[i3] *= s; arr[i3+1] *= s; arr[i3+2] *= s;
+                    } 
+                    else if(mode === 'flow') {
+                        // 转折：旋转流场
+                        const x = arr[i3], z = arr[i3+2];
+                        arr[i3] = x * 0.99 - z * 0.04;
+                        arr[i3+2] = x * 0.04 + z * 0.99;
+                        arr[i3+1] += Math.cos(time + x) * 0.002;
+                    }
+                    else if(mode === 'strike') {
+                        // 发力：向外迸发
+                        arr[i3] *= 1.08; arr[i3+1] *= 1.08; arr[i3+2] *= 1.08;
+                        if(Math.abs(arr[i3]) > 3) { arr[i3]*=0.1; arr[i3+1]*=0.1; arr[i3+2]*=0.1; }
+                    }
                 }
                 points.geometry.attributes.position.needsUpdate = true;
                 requestAnimationFrame(animate);
             }
             animate();
         }
-        function changeMode(m) { mode = m; if(m==='strike') setTimeout(()=>mode='breath',800); }
+
+        function setMode(m) {
+            mode = m;
+            if(m === 'strike') {
+                setTimeout(() => { mode = 'breath'; }, 800);
+            }
+        }
     </script>
 </body>
 </html>
