@@ -3,10 +3,8 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>武当 · 手驭气韵</title>
-    <!-- 基础框架 -->
+    <title>武当 · 虚空驭气</title>
     <script src="https://cdn.staticfile.org/aframe/1.4.2/aframe.min.js"></script>
-    <!-- MediaPipe 手势识别库 -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
     
@@ -14,204 +12,175 @@
         :root { --gold: #d4af37; }
         body { margin: 0; overflow: hidden; background: #000; font-family: "PingFang SC", sans-serif; }
         
-        /* UI 引导层 */
-        #gui {
+        /* 核心：摄像头背景全屏 */
+        #input_video {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            object-fit: cover; z-index: -1;
+            transform: scaleX(-1); /* 镜像翻转，像照镜子一样自然 */
+        }
+
+        /* UI层 */
+        #ui-layer {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             pointer-events: none; z-index: 100;
         }
         .header { position: absolute; top: 30px; left: 30px; border-left: 2px solid var(--gold); padding-left: 12px; }
-        .header h1 { color: var(--gold); font-size: 20px; margin: 0; letter-spacing: 4px; font-weight: 300; }
+        .header h1 { color: var(--gold); font-size: 20px; margin: 0; letter-spacing: 4px; font-weight: 300; text-shadow: 0 0 10px rgba(0,0,0,0.5); }
         
-        /* 状态提示 */
-        #status-board {
-            position: absolute; top: 30px; right: 30px; text-align: right;
-            color: #fff; font-size: 10px; opacity: 0.6; letter-spacing: 1px;
-        }
-
-        /* 底部交互说明 */
-        .tutorial {
+        #status-info {
             position: absolute; bottom: 40px; width: 100%; text-align: center;
-            color: var(--gold); font-size: 12px; letter-spacing: 2px;
-            animation: breathe 2s infinite ease-in-out;
+            color: #fff; font-size: 12px; letter-spacing: 2px;
         }
-        @keyframes breathe { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+        .mode-text { color: var(--gold); font-size: 18px; display: block; margin-top: 5px; text-shadow: 0 0 8px rgba(0,0,0,0.8); }
 
-        #loading {
+        #loader {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: #000; z-index: 1000; display: flex; flex-direction: column;
             align-items: center; justify-content: center; color: var(--gold);
         }
-
-        /* 隐藏的视频源 */
-        #input_video { display: none; }
     </style>
 </head>
 <body>
 
-    <div id="loading">
-        <div style="font-size: 20px; letter-spacing: 8px; margin-bottom: 20px;">正在感应内力 (加载AI)...</div>
-        <div id="loading-bar" style="font-size: 12px;">请确保光线充足</div>
+    <div id="loader">
+        <div style="font-size: 18px; letter-spacing: 5px;">正在开启气场感应...</div>
     </div>
 
-    <video id="input_video"></video>
+    <!-- 实时摄像头源 -->
+    <video id="input_video" playsinline></video>
 
-    <div id="gui">
+    <div id="ui-layer">
         <div class="header">
-            <h1>武当 · 手驭气韵</h1>
-            <p style="color:rgba(255,255,255,0.4); margin:0; font-size:9px;">HAND-GARDEN QI AR VIZ</p>
+            <h1>武当 · 虚空驭气</h1>
+            <p style="color:rgba(255,255,255,0.6); margin:0; font-size:9px;">WUDANG SPIRIT AR</p>
         </div>
-        <div id="status-board">
-            AI 追踪: <span id="track-status" style="color:#ff4444;">未感应</span><br>
-            状态: <span id="mode-status">起势</span>
+        
+        <div id="status-info">
+            <span id="track-stat">正在寻觅内力...</span>
+            <span class="mode-text" id="cur-mode">起势调息</span>
         </div>
-        <div class="tutorial" id="tuto-text">请将手掌举至摄像头前</div>
     </div>
 
     <a-scene renderer="antialias: true; alpha: true" vr-mode-ui="enabled: false">
-        <!-- 气韵核心 -->
-        <a-entity id="qi-world">
-            <a-entity id="hand-glow">
-                <a-sphere radius="0.03" material="color:#fff; emissive:#fff; emissiveIntensity:3"></a-sphere>
-                <a-light type="point" color="#d4af37" intensity="2" distance="4"></a-light>
+        <a-entity id="ar-world">
+            <!-- 手部追踪锚点 -->
+            <a-entity id="hand-point">
+                <a-sphere radius="0.03" material="color:#fff; emissive:#fff; emissiveIntensity:2"></a-sphere>
+                <a-light type="point" color="#d4af37" intensity="2" distance="5"></a-light>
             </a-entity>
-            <a-entity id="particle-container"></a-entity>
+            <!-- 粒子容器 -->
+            <a-entity id="particles-node"></a-entity>
         </a-entity>
-        
-        <a-camera id="main-cam" look-controls="enabled: false" position="0 0 0"></a-camera>
+        <a-camera fov="60" look-controls="enabled: false" position="0 0 0"></a-camera>
     </a-scene>
 
     <script>
         const videoElement = document.getElementById('input_video');
-        const statusText = document.getElementById('track-status');
-        const modeStatus = document.getElementById('mode-status');
-        const tutoText = document.getElementById('tuto-text');
+        const trackStat = document.getElementById('track-stat');
+        const modeText = document.getElementById('cur-mode');
         
         let mode = 'breath'; // breath, flow, strike
-        let handPos = { x: 0, y: 0, z: -1.5 };
-        let isHandActive = false;
+        let rawHandPos = new THREE.Vector3(0, 0, -1.2);
+        let smoothHandPos = new THREE.Vector3(0, 0, -1.2);
 
-        // 1. 初始化粒子系统
-        const count = 5000;
-        const particleNode = document.querySelector('#particle-container').object3D;
+        // 1. 粒子系统设置 (更震撼的视觉)
+        const count = 6000;
+        const container = document.querySelector('#particles-node').object3D;
         const geo = new THREE.BufferGeometry();
-        const positions = new Float32Array(count * 3);
-        const velocities = [];
+        const posArr = new Float32Array(count * 3);
+        const vels = [];
 
         for(let i=0; i<count; i++) {
-            positions[i*3] = (Math.random()-0.5) * 2;
-            positions[i*3+1] = (Math.random()-0.5) * 2;
-            positions[i*3+2] = -1.5 + (Math.random()-0.5) * 2;
-            velocities.push(new THREE.Vector3(0,0,0));
+            posArr[i*3] = (Math.random()-0.5) * 2;
+            posArr[i*3+1] = (Math.random()-0.5) * 2;
+            posArr[i*3+2] = -1.2;
+            vels.push(new THREE.Vector3(0,0,0));
         }
 
-        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
         const mat = new THREE.PointsMaterial({
-            color: 0xd4af37, size: 0.015, transparent: true, opacity: 0.6,
+            color: 0xd4af37, size: 0.015, transparent: true, opacity: 0.7,
             blending: THREE.AdditiveBlending, depthWrite: false
         });
         const points = new THREE.Points(geo, mat);
-        particleNode.add(points);
+        container.add(points);
 
-        // 2. MediaPipe 手势识别配置
-        const hands = new Hands({locateFile: (file) => {
-            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
-        }});
-
-        hands.setOptions({
-            maxNumHands: 1,
-            modelComplexity: 1,
-            minDetectionConfidence: 0.7,
-            minTrackingConfidence: 0.7
-        });
-
-        hands.onResults(onResults);
-
-        function onResults(results) {
+        // 2. MediaPipe 手势逻辑
+        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
+        
+        hands.onResults(results => {
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                statusText.innerText = "已感应";
-                statusText.style.color = "#4dcad8";
-                isHandActive = true;
-                
-                // 获取手心坐标 (Landmark 9 是中指指根)
+                trackStat.innerText = "内力已感应";
                 const lm = results.multiHandLandmarks[0][9];
-                // 坐标映射：MediaPipe 是 0-1 空间，映射到 A-Frame 空间
-                handPos.x = (lm.x - 0.5) * -3; // 翻转 X 轴对齐镜像
-                handPos.y = (0.5 - lm.y) * 2 + 1.2; 
-                
-                // 更新发光球位置
-                document.querySelector('#hand-glow').object3D.position.set(handPos.x, handPos.y, -1.5);
+                // 关键点：镜像对齐转换
+                // 因为视频 scaleX(-1)，所以这里 lm.x 越小其实是在画面右边，需要对应转换
+                rawHandPos.x = (lm.x - 0.5) * -2.8; 
+                rawHandPos.y = (0.5 - lm.y) * 2.2;
 
-                // 简单的手势逻辑：根据食指和拇指距离判断
                 const thumb = results.multiHandLandmarks[0][4];
                 const index = results.multiHandLandmarks[0][8];
-                const distance = Math.sqrt(Math.pow(thumb.x-index.x,2) + Math.pow(thumb.y-index.y,2));
+                const dist = Math.sqrt(Math.pow(thumb.x-index.x,2) + Math.pow(thumb.y-index.y,2));
 
-                if(distance < 0.05) {
-                    mode = 'strike';
-                    modeStatus.innerText = "瞬间发力";
-                    tutoText.innerText = "内力迸发！";
+                if(dist < 0.06) {
+                    mode = 'strike'; modeText.innerText = "瞬时发劲";
                 } else {
-                    mode = 'flow';
-                    modeStatus.innerText = "圆转连绵";
-                    tutoText.innerText = "随手而动，意在笔先";
+                    mode = 'flow'; modeText.innerText = "云手连绵";
                 }
             } else {
-                statusText.innerText = "未感应";
-                statusText.style.color = "#ff4444";
-                mode = 'breath';
-                modeStatus.innerText = "调息";
-                isHandActive = false;
+                trackStat.innerText = "正在寻觅内力...";
+                mode = 'breath'; modeText.innerText = "起势调息";
             }
-        }
+        });
 
         const camera = new Camera(videoElement, {
-            onFrame: async () => {
-                await hands.send({image: videoElement});
-            },
-            width: 640,
-            height: 480
+            onFrame: async () => { await hands.send({image: videoElement}); },
+            width: 1280, height: 720
         });
-        camera.start().then(() => {
-            document.getElementById('loading').style.display = 'none';
-        });
+        camera.start().then(() => document.getElementById('loader').style.display = 'none');
 
-        // 3. 粒子动力学核心渲染
+        // 3. 实时动力学动画
         function animate() {
-            const arr = points.geometry.attributes.position.array;
+            const positions = points.geometry.attributes.position.array;
             const time = Date.now() * 0.001;
+
+            // 插值平滑
+            smoothHandPos.lerp(rawHandPos, 0.15);
+            document.querySelector('#hand-point').object3D.position.copy(smoothHandPos);
 
             for(let i=0; i<count; i++) {
                 const i3 = i * 3;
+                const v = vels[i];
+                const dx = smoothHandPos.x - positions[i3];
+                const dy = smoothHandPos.y - positions[i3+1];
                 
-                if (mode === 'strike') {
-                    // 发力：粒子向手心反方向炸裂
-                    arr[i3] += (arr[i3] - handPos.x) * 0.15;
-                    arr[i3+1] += (arr[i3+1] - handPos.y) * 0.15;
-                    // 越界重置到手心
-                    if(Math.abs(arr[i3]) > 3) {
-                        arr[i3] = handPos.x; arr[i3+1] = handPos.y; arr[i3+2] = -1.5;
+                if(mode === 'strike') {
+                    // 气势：顺着手部喷涌
+                    v.x += (positions[i3] - smoothHandPos.x) * 0.15;
+                    v.y += (positions[i3+1] - smoothHandPos.y) * 0.15;
+                    if(Math.abs(positions[i3]) > 3) {
+                        positions[i3] = smoothHandPos.x; 
+                        positions[i3+1] = smoothHandPos.y;
+                        v.set(0,0,0);
                     }
-                } 
-                else if (mode === 'flow' && isHandActive) {
-                    // 转折：粒子像旋涡一样绕着手转
-                    const dx = arr[i3] - handPos.x;
-                    const dy = arr[i3+1] - handPos.y;
-                    const dist = Math.sqrt(dx*dx + dy*dy);
-                    
-                    // 旋转力
-                    const angle = 0.1;
+                } else if(mode === 'flow') {
+                    // 转折：云手旋涡
+                    const angle = 0.06;
                     const rx = dx * Math.cos(angle) - dy * Math.sin(angle);
                     const ry = dx * Math.sin(angle) + dy * Math.cos(angle);
-                    
-                    // 向心力
-                    arr[i3] = handPos.x + rx * 0.99;
-                    arr[i3+1] = handPos.y + ry * 0.99;
+                    positions[i3] += (rx - dx) + dx * 0.02;
+                    positions[i3+1] += (ry - dy) + dy * 0.02;
+                    v.multiplyScalar(0.9);
+                } else {
+                    // 气息：聚散律动
+                    const noise = Math.sin(time + i) * 0.002;
+                    v.x += dx * 0.001 + noise;
+                    v.y += dy * 0.001 + noise;
+                    v.multiplyScalar(0.95);
                 }
-                else {
-                    // 调息模式：自然缓慢漂浮
-                    arr[i3] += Math.sin(time + i) * 0.002;
-                    arr[i3+1] += Math.cos(time + i) * 0.002;
-                }
+
+                positions[i3] += v.x;
+                positions[i3+1] += v.y;
             }
 
             points.geometry.attributes.position.needsUpdate = true;
