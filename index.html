@@ -3,68 +3,61 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>武当 · 灵动气韵</title>
-    <script src="https://cdn.staticfile.org/aframe/1.4.2/aframe.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <title>武当 · 驭气 (国内加速版)</title>
+    <!-- 替换为字节跳动/静态资源加速库 -->
+    <script src="https://lf6-cdn-tos.bytecdntp.com/cdn/expire-1-M/aframe/1.2.0/aframe.min.js"></script>
+    <!-- 使用饿了么(阿里)提供的 MediaPipe 镜像 -->
+    <script src="https://npm.elemecdn.com/@mediapipe/hands/hands.js"></script>
+    <script src="https://npm.elemecdn.com/@mediapipe/camera_utils/camera_utils.js"></script>
     
     <style>
-        :root { --gold: #d4af37; }
-        body { margin: 0; overflow: hidden; background: #000; }
-        
+        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
         #input_video {
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
             object-fit: cover; z-index: -1; transform: scaleX(-1);
         }
-
         #ui-layer {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             pointer-events: none; z-index: 100;
         }
-
-        /* 灵敏度指示器 */
-        #sensing-ring {
-            position: absolute; top: 30px; right: 30px; width: 40px; height: 40px;
-            border: 2px solid rgba(212,175,55,0.3); border-radius: 50%;
-        }
-        #sensing-dot {
-            width: 100%; height: 100%; border-radius: 50%; background: var(--gold);
-            transform: scale(0); transition: transform 0.2s;
-        }
-
         .info {
-            position: absolute; bottom: 40px; width: 100%; text-align: center;
-            color: #fff; text-shadow: 0 0 10px #000; font-family: "PingFang SC";
+            position: absolute; bottom: 50px; width: 100%; text-align: center;
+            color: #d4af37; text-shadow: 0 0 8px #000;
         }
-        .mode-tag { font-size: 20px; color: var(--gold); letter-spacing: 5px; font-weight: bold; }
-
-        #loader {
+        #welcome {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: #000; z-index: 1000; display: flex; align-items: center; justify-content: center;
-            color: var(--gold); font-family: serif; letter-spacing: 5px;
+            background: #000; z-index: 1000; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; color: #d4af37;
+        }
+        button {
+            background: rgba(212,175,55,0.1); border: 1px solid #d4af37; color: #d4af37;
+            padding: 15px 40px; border-radius: 30px; font-size: 18px; margin-top: 20px;
+            cursor: pointer;
         }
     </style>
 </head>
 <body>
 
-    <div id="loader">感应灵气中...</div>
+    <div id="welcome">
+        <div style="font-size: 24px; letter-spacing: 10px; font-weight: bold;">武当 · 驭气</div>
+        <div id="loading-text" style="font-size: 13px; margin-top: 15px; opacity: 0.8;">正在感应内力 (同步 AI 模型)...</div>
+        <button id="start-btn" style="display: none;">开启感应</button>
+    </div>
 
     <video id="input_video" playsinline></video>
 
     <div id="ui-layer">
-        <div id="sensing-ring"><div id="sensing-dot"></div></div>
         <div class="info">
-            <div id="status">寻找双掌中...</div>
-            <div class="mode-tag" id="mode-text">调息</div>
+            <div id="status" style="font-size: 12px; opacity: 0.7;">初始化中...</div>
+            <div id="mode-text" style="font-size: 28px; font-weight: bold; margin-top: 5px; letter-spacing: 5px;">调息</div>
         </div>
     </div>
 
-    <a-scene renderer="antialias: false; alpha: true; precision: mediump;" vr-mode-ui="enabled: false">
+    <a-scene renderer="antialias: false; alpha: true" vr-mode-ui="enabled: false">
         <a-entity id="anchor">
-            <!-- 视觉手心反馈 -->
             <a-entity id="hand-glow" visible="false">
-                <a-sphere radius="0.04" material="color:#fff; emissive:#fff; emissiveIntensity:2; opacity:0.6; transparent:true"></a-sphere>
-                <a-light type="point" color="#d4af37" intensity="2" distance="3"></a-light>
+                <a-sphere radius="0.06" material="color:#fff; emissive:#fff; emissiveIntensity:2; opacity:0.6; transparent:true"></a-sphere>
+                <a-light type="point" color="#d4af37" intensity="2" distance="4"></a-light>
             </a-entity>
             <a-entity id="particles"></a-entity>
         </a-entity>
@@ -73,97 +66,106 @@
 
     <script>
         const video = document.getElementById('input_video');
-        const sensingDot = document.getElementById('sensing-dot');
-        const modeText = document.getElementById('mode-text');
+        const startBtn = document.getElementById('start-btn');
+        const loadingText = document.getElementById('loading-text');
         const statusText = document.getElementById('status');
+        const modeText = document.getElementById('mode-text');
         
-        let mode = 'breath'; // breath, flow, strike
+        let mode = 'breath';
         let rawPos = { x: 0, y: 0, z: -1.2 };
         let smoothPos = new THREE.Vector3(0, 0, -1.2);
-        let handVelocity = 0;
-        let lastX = 0, lastY = 0;
 
-        // 1. 粒子系统物理参数优化
-        const count = 4000; // 降低数量提高灵敏度
-        const container = document.querySelector('#particles').object3D;
-        const geo = new THREE.BufferGeometry();
-        const positions = new Float32Array(count * 3);
-        const vels = [];
-
-        for(let i=0; i<count; i++) {
-            positions[i*3] = (Math.random()-0.5) * 2;
-            positions[i*3+1] = (Math.random()-0.5) * 2;
-            positions[i*3+2] = -1.2;
-            vels.push(new THREE.Vector3(0,0,0));
-        }
-        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        const mat = new THREE.PointsMaterial({
-            color: 0xd4af37, size: 0.018, transparent: true, opacity: 0.7,
-            blending: THREE.AdditiveBlending, depthWrite: false
+        // --- 关键：使用国内镜像地址定位模型文件 ---
+        const hands = new Hands({
+            locateFile: (file) => {
+                // 使用饿了么(阿里)的镜像源，解决模型下载卡顿
+                return `https://npm.elemecdn.com/@mediapipe/hands/${file}`;
+            }
         });
-        const points = new THREE.Points(geo, mat);
-        container.add(points);
 
-        // 2. 灵敏度优化版 MediaPipe
-        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-        
         hands.setOptions({
             maxNumHands: 1,
-            modelComplexity: 0, // 关键：0 是最快模式，1 是平衡
+            modelComplexity: 0,
             minDetectionConfidence: 0.5,
             minTrackingConfidence: 0.5
         });
 
         hands.onResults(results => {
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                sensingDot.style.transform = 'scale(1)';
-                statusText.innerText = "灵气交汇";
+                statusText.innerText = "内力交汇中";
                 const lm = results.multiHandLandmarks[0][9];
-                
-                // 坐标平滑处理
                 rawPos.x = (lm.x - 0.5) * -3.0; 
-                rawPos.y = (0.5 - lm.y) * 2.2;
-                
-                // 计算手部挥动速度
-                handVelocity = Math.sqrt(Math.pow(rawPos.x - lastX, 2) + Math.pow(rawPos.y - lastY, 2));
-                lastX = rawPos.x; lastY = rawPos.y;
+                rawPos.y = (0.5 - lm.y) * 2.5;
 
-                // 交互姿态判定
                 const thumb = results.multiHandLandmarks[0][4];
                 const index = results.multiHandLandmarks[0][8];
-                const pinchDist = Math.sqrt(Math.pow(thumb.x-index.x,2) + Math.pow(thumb.y-index.y,2));
+                const dist = Math.sqrt(Math.pow(thumb.x-index.x,2) + Math.pow(thumb.y-index.y,2));
 
-                if(pinchDist < 0.07 || handVelocity > 0.15) {
-                    mode = 'strike';
-                    modeText.innerText = "瞬时发劲";
+                if(dist < 0.07) {
+                    mode = 'strike'; modeText.innerText = "瞬时发劲";
                 } else {
-                    mode = 'flow';
-                    modeText.innerText = "圆转云手";
+                    mode = 'flow'; modeText.innerText = "云手圆转";
                 }
                 document.getElementById('hand-glow').setAttribute('visible', 'true');
             } else {
-                sensingDot.style.transform = 'scale(0)';
                 statusText.innerText = "寻找双掌中...";
-                mode = 'breath';
-                modeText.innerText = "调息";
+                mode = 'breath'; modeText.innerText = "调息";
                 document.getElementById('hand-glow').setAttribute('visible', 'false');
             }
         });
 
-        // 限制处理频率以节省性能
-        const camera = new Camera(video, {
-            onFrame: async () => { await hands.send({image: video}); },
-            width: 480, height: 480 // 关键：降低 AI 处理分辨率，大幅提升灵敏度
-        });
-        camera.start().then(() => document.getElementById('loader').style.display = 'none');
+        // 手动开启，避免浏览器拦截摄像头
+        startBtn.onclick = async () => {
+            document.getElementById('welcome').style.opacity = '0';
+            setTimeout(()=> document.getElementById('welcome').style.display = 'none', 500);
+            
+            const camera = new Camera(video, {
+                onFrame: async () => { await hands.send({image: video}); },
+                width: 480, height: 480
+            });
+            camera.start();
+            initParticles();
+            animate();
+        };
 
-        // 3. 丝滑动画逻辑
+        // 监测 MediaPipe 是否加载成功
+        try {
+            window.onload = () => {
+                loadingText.innerText = "感应器就绪，请在明亮处开启";
+                startBtn.style.display = "block";
+            };
+        } catch (e) {
+            loadingText.innerText = "网络环境受限，请尝试切换移动网络";
+        }
+
+        // --- 粒子动力学 ---
+        const count = 3000;
+        const container = document.querySelector('#particles').object3D;
+        let points;
+        let vels = [];
+
+        function initParticles() {
+            const geo = new THREE.BufferGeometry();
+            const posArray = new Float32Array(count * 3);
+            for(let i=0; i<count; i++) {
+                posArray[i*3] = (Math.random()-0.5)*2;
+                posArray[i*3+1] = (Math.random()-0.5)*2;
+                posArray[i*3+2] = -1.2;
+                vels.push(new THREE.Vector3(0,0,0));
+            }
+            geo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+            const mat = new THREE.PointsMaterial({
+                color: 0xd4af37, size: 0.02, transparent: true, opacity: 0.7,
+                blending: THREE.AdditiveBlending, depthWrite: false
+            });
+            points = new THREE.Points(geo, mat);
+            container.add(points);
+        }
+
         function animate() {
+            if(!points) return;
             const arr = points.geometry.attributes.position.array;
-            const time = Date.now() * 0.001;
-
-            // 增强跟手性：增加 Lerp 速度 (0.3)
-            smoothPos.lerp(new THREE.Vector3(rawPos.x, rawPos.y, -1.2), 0.3);
+            smoothPos.lerp(new THREE.Vector3(rawPos.x, rawPos.y, -1.2), 0.2);
             document.querySelector('#hand-glow').object3D.position.copy(smoothPos);
 
             for(let i=0; i<count; i++) {
@@ -173,15 +175,10 @@
                 const dy = smoothPos.y - arr[i3+1];
 
                 if(mode === 'strike') {
-                    // 爆发：更猛烈的喷射
-                    v.x += (arr[i3] - smoothPos.x) * 0.2;
-                    v.y += (arr[i3+1] - smoothPos.y) * 0.2;
-                    if(Math.abs(arr[i3]) > 4) {
-                        arr[i3] = smoothPos.x; arr[i3+1] = smoothPos.y;
-                        v.set(0,0,0);
-                    }
+                    v.x += (arr[i3] - smoothPos.x) * 0.25;
+                    v.y += (arr[i3+1] - smoothPos.y) * 0.25;
+                    if(Math.abs(arr[i3]) > 4) { arr[i3] = smoothPos.x; arr[i3+1] = smoothPos.y; v.set(0,0,0); }
                 } else if(mode === 'flow') {
-                    // 转折：增加粘滞阻力，呈现水墨感
                     const angle = 0.08;
                     const rx = dx * Math.cos(angle) - dy * Math.sin(angle);
                     const ry = dx * Math.sin(angle) + dy * Math.cos(angle);
@@ -189,18 +186,13 @@
                     arr[i3+1] += (ry - dy) + dy * 0.05;
                     v.multiplyScalar(0.85);
                 } else {
-                    // 调息：柔和汇聚
-                    v.x += dx * 0.005 + Math.sin(time + i) * 0.002;
-                    v.y += dy * 0.005 + Math.cos(time + i) * 0.002;
-                    v.multiplyScalar(0.9);
+                    v.x += dx * 0.005; v.y += dy * 0.005; v.multiplyScalar(0.9);
                 }
-                arr[i3] += v.x;
-                arr[i3+1] += v.y;
+                arr[i3] += v.x; arr[i3+1] += v.y;
             }
             points.geometry.attributes.position.needsUpdate = true;
             requestAnimationFrame(animate);
         }
-        animate();
     </script>
 </body>
 </html>
