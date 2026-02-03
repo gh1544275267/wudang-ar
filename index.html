@@ -1,169 +1,207 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="zh-CN">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>武当 · 墨影</title>
-    <!-- 使用国内最快的静态资源库 -->
-    <script src="https://lib.baomitu.com/three.js/r128/three.min.js"></script>
+    <title>武当 · 气韵</title>
+    <!-- 使用字节跳动静态资源加速库，确保 Three.js 极速加载 -->
+    <script src="https://lf6-cdn-tos.bytecdntp.com/cdn/expire-1-M/three.js/r128/three.min.js"></script>
+    <!-- 使用饿了么(阿里)提供的 MediaPipe 镜像，确保 AI 引擎不被墙 -->
     <script src="https://npm.elemecdn.com/@mediapipe/hands/hands.js"></script>
     <script src="https://npm.elemecdn.com/@mediapipe/camera_utils/camera_utils.js"></script>
+    
     <style>
+        :root { --gold: #d4af37; }
         body { margin: 0; overflow: hidden; background: #000; font-family: "PingFang SC", sans-serif; }
-        #v { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: cover; z-index: -1; transform: scaleX(-1); }
+        /* 视频背景：镜像翻转以符合直觉 */
+        #video_src { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: cover; z-index: -1; transform: scaleX(-1); }
         canvas { position: fixed; top: 0; left: 0; z-index: 1; pointer-events: none; }
         
-        /* 极简加载 UI */
-        #loading {
+        /* 启动与加载 UI */
+        #loading-mask {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: #000; z-index: 100; display: flex; flex-direction: column;
-            align-items: center; justify-content: center; transition: opacity 0.5s;
+            background: radial-gradient(circle, #1a1a1a 0%, #000 100%);
+            z-index: 1000; display: flex; flex-direction: column; align-items: center; justify-content: center;
         }
-        .logo { color: #d4af37; font-size: 24px; letter-spacing: 8px; margin-bottom: 20px; font-weight: 200; }
-        .bar-container { width: 200px; height: 1px; background: rgba(212,175,55,0.2); }
-        #bar { width: 0%; height: 100%; background: #d4af37; transition: width 0.3s; }
-        
-        #btn {
-            display: none; background: none; border: 1px solid #d4af37; color: #d4af37;
-            padding: 10px 30px; cursor: pointer; margin-top: 20px; letter-spacing: 2px;
+        .title { color: var(--gold); font-size: 26px; letter-spacing: 12px; font-weight: 200; margin-bottom: 40px; }
+        #start-btn {
+            background: none; border: 1px solid var(--gold); color: var(--gold);
+            padding: 12px 40px; border-radius: 2px; font-size: 14px; cursor: pointer; letter-spacing: 4px;
+            display: none; /* 等待库加载完成后显示 */
         }
+        .progress-box { width: 160px; height: 1px; background: rgba(212,175,55,0.2); }
+        #bar { width: 0%; height: 100%; background: var(--gold); transition: width 0.3s; }
 
-        #msg { position: fixed; bottom: 30px; width: 100%; text-align: center; color: #d4af37; z-index: 50; font-size: 14px; text-shadow: 0 0 5px #000; }
+        /* 交互提示 */
+        #hint { position: fixed; bottom: 40px; width: 100%; text-align: center; color: var(--gold); z-index: 50; font-size: 14px; text-shadow: 0 0 10px #000; }
     </style>
 </head>
 <body>
 
-<div id="loading">
-    <div class="logo">武当 · 墨影</div>
-    <div class="bar-container"><div id="bar"></div></div>
-    <button id="btn">开启感应</button>
-</div>
+    <div id="loading-mask">
+        <div class="title">武当 · 气韵</div>
+        <div class="progress-box"><div id="bar"></div></div>
+        <button id="start-btn">开启感应</button>
+    </div>
 
-<video id="v" playsinline></video>
-<div id="msg">加载秘籍中...</div>
+    <video id="video_src" playsinline></video>
+    <div id="hint">正在同步 AI 秘籍...</div>
 
-<script>
-    const $ = (id) => document.getElementById(id);
-    let mode = 'breath', scene, camera, renderer, particles, count = 3000;
-    let handX = 0, handY = 0, targetX = 0, targetY = 0, isActive = false;
+    <script>
+        const $ = (id) => document.getElementById(id);
+        let scene, camera, renderer, particles, count = 3500;
+        let targetPos = new THREE.Vector3(0, 0, -1.5);
+        let currentPos = new THREE.Vector3(0, 0, -1.5);
+        let mode = 'breath'; // breath, flow, strike
+        let isHandVisible = false;
 
-    // 1. 快速初始化 3D 场景
-    function initScene() {
-        scene = new THREE.Scene();
-        camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
-        renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true }); // 关闭抗锯齿提升性能
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        document.body.appendChild(renderer.domElement);
+        // 1. 初始化 Three.js 场景 (去除所有外部贴图，改用 Canvas 绘图)
+        function initScene() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            document.body.appendChild(renderer.domElement);
 
-        const geo = new THREE.BufferGeometry();
-        const pos = new Float32Array(count * 3);
-        for(let i=0; i<count*3; i++) pos[i] = (Math.random()-0.5) * 2;
-        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-        
-        const mat = new THREE.PointsMaterial({
-            color: 0xd4af37, size: 0.02, transparent: true, opacity: 0.7,
-            blending: THREE.AdditiveBlending, depthWrite: false
-        });
-        particles = new THREE.Points(geo, mat);
-        scene.add(particles);
-        animate();
-    }
+            // 程序化生成水墨粒子贴图
+            const canvas = document.createElement('canvas');
+            canvas.width = 64; canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            const grad = ctx.createRadialGradient(32,32,0,32,32,32);
+            grad.addColorStop(0, 'rgba(255,255,255,1)');
+            grad.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = grad; ctx.fillRect(0,0,64,64);
+            const texture = new THREE.CanvasTexture(canvas);
 
-    // 2. 动画循环 (放在最前面以保证视觉流畅)
-    function animate() {
-        requestAnimationFrame(animate);
-        const time = Date.now() * 0.001;
-        const pos = particles.geometry.attributes.position.array;
-
-        // 手部位置平滑插值 (Lerp)
-        handX += (targetX - handX) * 0.2;
-        handY += (targetY - handY) * 0.2;
-
-        for(let i=0; i<count; i++) {
-            const i3 = i * 3;
-            const dx = handX - pos[i3];
-            const dy = handY - pos[i3+1];
-
-            if(mode === 'strike') {
-                pos[i3] -= dx * 0.2; pos[i3+1] -= dy * 0.2;
-                if(Math.abs(pos[i3]) > 3) { pos[i3] = handX; pos[i3+1] = handY; }
-            } else if(isActive) {
-                // 圆转轨迹
-                const angle = 0.05;
-                const rx = dx * Math.cos(angle) - dy * Math.sin(angle);
-                const ry = dx * Math.sin(angle) + dy * Math.cos(angle);
-                pos[i3] += (rx - dx) + dx * 0.02;
-                pos[i3+1] += (ry - dy) + dy * 0.02;
-            } else {
-                // 调息
-                pos[i3] += Math.sin(time + i) * 0.002 + dx * 0.005;
-                pos[i3+1] += Math.cos(time + i) * 0.002 + dy * 0.005;
+            const geo = new THREE.BufferGeometry();
+            const pos = new Float32Array(count * 3);
+            const vels = [];
+            for(let i=0; i<count; i++) {
+                pos[i*3] = (Math.random()-0.5)*2;
+                pos[i*3+1] = (Math.random()-0.5)*2;
+                pos[i*3+2] = -1.5;
+                vels.push(new THREE.Vector3(0,0,0));
             }
-        }
-        particles.geometry.attributes.position.needsUpdate = true;
-        renderer.render(scene, camera);
-    }
-
-    // 3. AI 加载策略
-    const hands = new Hands({
-        locateFile: (file) => `https://npm.elemecdn.com/@mediapipe/hands/${file}`
-    });
-
-    hands.setOptions({
-        maxNumHands: 1,
-        modelComplexity: 0, // 关键：使用最轻量的模型
-        minDetectionConfidence: 0.5,
-        minTrackingConfidence: 0.5
-    });
-
-    hands.onResults(res => {
-        if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
-            isActive = true;
-            const lm = res.multiHandLandmarks[0][9];
-            targetX = (lm.x - 0.5) * -3;
-            targetY = (0.5 - lm.y) * 3;
+            geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
             
-            const thumb = res.multiHandLandmarks[0][4];
-            const index = res.multiHandLandmarks[0][8];
-            const dist = Math.sqrt(Math.pow(thumb.x-index.x,2)+Math.pow(thumb.y-index.y,2));
-            if(dist < 0.06) { mode = 'strike'; $('msg').innerText = "瞬时发劲"; }
-            else { mode = 'flow'; $('msg').innerText = "圆转云手"; }
-        } else {
-            isActive = false; mode = 'breath'; $('msg').innerText = "寻找双掌...";
+            const mat = new THREE.PointsMaterial({
+                color: 0xd4af37, size: 0.025, map: texture, transparent: true, 
+                opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false
+            });
+            particles = new THREE.Points(geo, mat);
+            particles.userData.vels = vels;
+            scene.add(particles);
+            
+            render();
         }
-    });
 
-    // 进度模拟与启动
-    let prog = 0;
-    const timer = setInterval(() => {
-        prog += 5;
-        $('bar').style.width = prog + '%';
-        if(prog >= 100) {
-            clearInterval(timer);
-            $('btn').style.display = 'block';
-            $('bar').parentElement.style.display = 'none';
-        }
-    }, 50);
-
-    $('btn').onclick = () => {
-        $('loading').style.opacity = '0';
-        setTimeout(() => $('loading').style.display = 'none', 500);
-        
-        const cam = new Camera($('v'), {
-            onFrame: async () => { await hands.send({image: $('v')}); },
-            width: 480, height: 480 // 降低识别分辨率换取极致流畅
+        // 2. AI 引擎设置 (确保 locateFile 强制指向阿里国内镜像)
+        const hands = new Hands({
+            locateFile: (file) => `https://npm.elemecdn.com/@mediapipe/hands/${file}`
         });
-        cam.start();
-        initScene();
-    };
 
-    window.onresize = () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-    };
-</script>
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 0, // Lite版，极速加载
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
 
+        hands.onResults(res => {
+            if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
+                isHandVisible = true;
+                const lm = res.multiHandLandmarks[0][9]; // 中指根部
+                targetPos.x = (lm.x - 0.5) * -3; 
+                targetPos.y = (0.5 - lm.y) * 2.5;
+
+                const thumb = res.multiHandLandmarks[0][4];
+                const index = res.multiHandLandmarks[0][8];
+                const dist = Math.sqrt(Math.pow(thumb.x-index.x,2) + Math.pow(thumb.y-index.y,2));
+                
+                if(dist < 0.06) { mode = 'strike'; $('hint').innerText = "发劲：极静而动"; }
+                else { mode = 'flow'; $('hint').innerText = "云手：圆转连绵"; }
+            } else {
+                isHandVisible = false;
+                mode = 'breath';
+                $('hint').innerText = "寻找双掌中... (请将手举起)";
+            }
+        });
+
+        // 渲染循环
+        function render() {
+            requestAnimationFrame(render);
+            const time = Date.now() * 0.001;
+            const positions = particles.geometry.attributes.position.array;
+            const vels = particles.userData.vels;
+
+            // 顺滑跟随
+            currentPos.lerp(targetPos, 0.2);
+
+            for(let i=0; i<count; i++) {
+                const i3 = i * 3;
+                const v = vels[i];
+                const dx = currentPos.x - positions[i3];
+                const dy = currentPos.y - positions[i3+1];
+
+                if(mode === 'strike') {
+                    // 爆发物理：气势
+                    v.x += (positions[i3] - currentPos.x) * 0.2;
+                    v.y += (positions[i3+1] - currentPos.y) * 0.2;
+                    if(Math.abs(positions[i3]) > 3) {
+                        positions[i3] = currentPos.x; positions[i3+1] = currentPos.y;
+                        v.set(0,0,0);
+                    }
+                } else if(isHandVisible) {
+                    // 旋涡物理：转折
+                    const angle = 0.06;
+                    const rx = dx * Math.cos(angle) - dy * Math.sin(angle);
+                    const ry = dx * Math.sin(angle) + dy * Math.cos(angle);
+                    positions[i3] += (rx - dx) + dx * 0.03;
+                    positions[i3+1] += (ry - dy) + dy * 0.03;
+                    v.multiplyScalar(0.8);
+                } else {
+                    // 脉动物理：气息
+                    v.x += dx * 0.005 + Math.sin(time + i) * 0.001;
+                    v.y += dy * 0.005 + Math.cos(time + i) * 0.001;
+                    v.multiplyScalar(0.92);
+                }
+                positions[i3] += v.x;
+                positions[i3+1] += v.y;
+            }
+            particles.geometry.attributes.position.needsUpdate = true;
+            renderer.render(scene, camera);
+        }
+
+        // 3. 加载与启动逻辑
+        let progress = 0;
+        const loader = setInterval(() => {
+            progress += 2;
+            $('bar').style.width = progress + '%';
+            if(progress >= 100) {
+                clearInterval(loader);
+                $('start-btn').style.display = 'block';
+                $('bar').parentElement.style.display = 'none';
+            }
+        }, 30);
+
+        $('start-btn').onclick = () => {
+            $('loading-mask').style.opacity = '0';
+            setTimeout(() => $('loading-mask').style.display = 'none', 500);
+            
+            const cameraUtils = new Camera($('video_src'), {
+                onFrame: async () => { await hands.send({image: $('video_src')}); },
+                width: 480, height: 480
+            });
+            cameraUtils.start();
+            initScene();
+        };
+
+        window.onresize = () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        };
+    </script>
 </body>
 </html>
