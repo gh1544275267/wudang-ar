@@ -3,153 +3,193 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>武当 · 气韵</title>
-    <!-- 极速 CDN 镜像 -->
+    <title>武当 · 墨韵流光</title>
     <script src="https://cdn.staticfile.org/three.js/r128/three.min.js"></script>
     <script src="https://npm.elemecdn.com/@mediapipe/hands/hands.js"></script>
     <script src="https://npm.elemecdn.com/@mediapipe/camera_utils/camera_utils.js"></script>
-    
     <style>
-        :root { --gold: #d4af37; }
+        :root { --gold: #d4af37; --cyan: #4dcad8; }
         body { margin: 0; overflow: hidden; background: #000; font-family: "PingFang SC", sans-serif; }
         #video_src { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: cover; z-index: -1; transform: scaleX(-1); }
-        canvas { position: fixed; top: 0; left: 0; z-index: 1; pointer-events: none; }
+        canvas { position: fixed; top: 0; left: 0; z-index: 1; pointer-events: none; filter: blur(0.5px); }
         
-        /* 启动遮罩 */
+        /* 艺术化 UI */
         #mask {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: #000; z-index: 1000; display: flex; flex-direction: column; align-items: center; justify-content: center;
-            transition: opacity 0.8s;
+            background: radial-gradient(circle at center, #1a1a1a 0%, #000 100%);
+            z-index: 1000; display: flex; flex-direction: column; align-items: center; justify-content: center;
+            transition: opacity 1s;
         }
-        .title { color: var(--gold); font-size: 28px; letter-spacing: 12px; margin-bottom: 30px; }
+        .logo { color: var(--gold); font-size: 28px; letter-spacing: 12px; margin-bottom: 50px; text-shadow: 0 0 20px rgba(212,175,55,0.4); }
         #start-btn {
             background: none; border: 1px solid var(--gold); color: var(--gold);
-            padding: 15px 50px; border-radius: 4px; font-size: 16px; cursor: pointer;
-            letter-spacing: 4px; display: none; /* 初始隐藏 */
+            padding: 15px 50px; border-radius: 2px; font-size: 14px; cursor: pointer;
+            letter-spacing: 4px; transition: 0.3s;
         }
-        #load-info { color: rgba(212,175,55,0.6); font-size: 12px; letter-spacing: 2px; }
-        #msg { position: fixed; bottom: 30px; width: 100%; text-align: center; color: var(--gold); z-index: 100; font-size: 14px; text-shadow: 0 0 5px #000; }
+        #start-btn:hover { background: var(--gold); color: #000; }
+        
+        #hud {
+            position: fixed; bottom: 50px; width: 100%; text-align: center;
+            color: #fff; z-index: 100; pointer-events: none;
+        }
+        .mode-title { font-size: 22px; letter-spacing: 8px; color: var(--gold); text-shadow: 0 0 10px #000; margin-bottom: 5px; }
+        .mode-desc { font-size: 10px; opacity: 0.6; letter-spacing: 2px; }
     </style>
 </head>
 <body>
 
     <div id="mask">
-        <div class="title">武当 · 气韵</div>
-        <div id="load-info">正在感应天地灵气...</div>
-        <button id="start-btn">开启感应</button>
+        <div class="logo">武当 · 墨韵流光</div>
+        <button id="start-btn" style="display: none;">感应开启</button>
+        <div id="load-info" style="color: rgba(255,255,255,0.3); font-size: 10px; margin-top: 20px;">正在同步秘籍资源...</div>
     </div>
 
     <video id="video_src" playsinline></video>
-    <div id="msg"></div>
+    
+    <div id="hud" style="display: none;">
+        <div class="mode-title" id="m-title">起势调息</div>
+        <div class="mode-desc" id="m-desc">虚领顶劲 · 气沉丹田</div>
+    </div>
 
     <script>
         const $ = (id) => document.getElementById(id);
-        let scene, camera, renderer, particles, count = 3000;
-        let targetPos = new THREE.Vector3(0, 0, -1.5), currentPos = new THREE.Vector3(0, 0, -1.5);
-        let mode = 'breath', isHandActive = false;
+        let scene, camera, renderer, points, count = 4000;
+        let targetPos = new THREE.Vector3(0, 0, -1.5), smoothPos = new THREE.Vector3(0, 0, -1.5);
+        let mode = 'breath', handActive = false;
+        let lastPos = new THREE.Vector3();
 
-        // --- 1. 场景初始化 ---
+        // 1. 初始化极致视觉场景
         function initScene() {
             scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
-            renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
+            camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 100);
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             document.body.appendChild(renderer.domElement);
 
-            // 动态生成粒子纹理
+            // 制作带有“水墨边缘”的粒子
             const canvas = document.createElement('canvas');
-            canvas.width = 32; canvas.height = 32;
+            canvas.width = 64; canvas.height = 64;
             const ctx = canvas.getContext('2d');
-            const grad = ctx.createRadialGradient(16,16,0,16,16,16);
-            grad.addColorStop(0, 'white'); grad.addColorStop(1, 'transparent');
-            ctx.fillStyle = grad; ctx.fillRect(0,0,32,32);
+            const g = ctx.createRadialGradient(32,32,0,32,32,32);
+            g.addColorStop(0, 'rgba(255,255,255,1)');
+            g.addColorStop(0.3, 'rgba(255,255,255,0.4)');
+            g.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = g; ctx.fillRect(0,0,64,64);
             const tex = new THREE.CanvasTexture(canvas);
 
             const geo = new THREE.BufferGeometry();
             const pos = new Float32Array(count * 3);
-            const vels = [];
+            const extra = new Float32Array(count); // 存储每个粒子的独特速度
             for(let i=0; i<count; i++) {
-                pos[i*3] = (Math.random()-0.5)*2; pos[i*3+1] = (Math.random()-0.5)*2; pos[i*3+2] = -1.5;
-                vels.push(new THREE.Vector3(0,0,0));
+                pos[i*3] = (Math.random()-0.5)*2;
+                pos[i*3+1] = (Math.random()-0.5)*2;
+                pos[i*3+2] = -1.5;
+                extra[i] = Math.random();
             }
             geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-            particles = new THREE.Points(geo, new THREE.PointsMaterial({
-                color: 0xd4af37, size: 0.02, map: tex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
-            }));
-            particles.userData.vels = vels;
-            scene.add(particles);
-            render();
+            
+            const mat = new THREE.PointsMaterial({
+                size: 0.035, map: tex, transparent: true, opacity: 0.7,
+                blending: THREE.AdditiveBlending, depthWrite: false, vertexColors: false
+            });
+            mat.color.set('#4dcad8'); // 初始调息色
+
+            points = new THREE.Points(geo, mat);
+            scene.add(points);
+            loop();
         }
 
-        function render() {
-            requestAnimationFrame(render);
+        // 2. 核心动力学优化：体现气势与转折
+        function loop() {
+            requestAnimationFrame(loop);
             const time = Date.now() * 0.001;
-            const pos = particles.geometry.attributes.position.array;
-            const vels = particles.userData.vels;
-            currentPos.lerp(targetPos, 0.15);
+            const posArr = points.geometry.attributes.position.array;
+            const mat = points.material;
+
+            // 平滑跟手
+            smoothPos.lerp(targetPos, 0.12);
 
             for(let i=0; i<count; i++) {
-                const i3 = i * 3; const v = vels[i];
-                const dx = currentPos.x - pos[i3], dy = currentPos.y - pos[i3+1];
+                const i3 = i * 3;
+                const dx = smoothPos.x - posArr[i3];
+                const dy = smoothPos.y - posArr[i3+1];
+                const dist = Math.sqrt(dx*dx + dy*dy);
+
                 if(mode === 'strike') {
-                    v.x += (pos[i3] - currentPos.x) * 0.2; v.y += (pos[i3+1] - currentPos.y) * 0.2;
-                    if(Math.abs(pos[i3]) > 3) { pos[i3] = currentPos.x; pos[i3+1] = currentPos.y; v.set(0,0,0); }
-                } else if(isHandActive) {
-                    const a = 0.06;
-                    const rx = dx * Math.cos(a) - dy * Math.sin(a);
-                    const ry = dx * Math.sin(a) + dy * Math.cos(a);
-                    pos[i3] += (rx - dx) + dx * 0.03; pos[i3+1] += (ry - dy) + dy * 0.03;
-                    v.multiplyScalar(0.8);
+                    // 【气势】展现：粒子向外爆发
+                    posArr[i3] -= dx * 0.25; 
+                    posArr[i3+1] -= dy * 0.25;
+                    mat.color.lerp(new THREE.Color('#ffffff'), 0.1);
+                    if(Math.abs(posArr[i3]) > 4) { posArr[i3] = smoothPos.x; posArr[i3+1] = smoothPos.y; }
+                } else if(handActive) {
+                    // 【转折】展现：绕手心旋转（云手）
+                    const speed = 0.07;
+                    const rx = dx * Math.cos(speed) - dy * Math.sin(speed);
+                    const ry = dx * Math.sin(speed) + dy * Math.cos(speed);
+                    posArr[i3] += (rx - dx) + dx * 0.04;
+                    posArr[i3+1] += (ry - dy) + dy * 0.04;
+                    mat.color.lerp(new THREE.Color('#d4af37'), 0.05); // 运动时变为金色
                 } else {
-                    v.x += dx * 0.005 + Math.sin(time + i) * 0.001; v.y += dy * 0.005 + Math.cos(time + i) * 0.001;
-                    v.multiplyScalar(0.9);
+                    // 【气息】展现：缓慢规律收放
+                    const wave = Math.sin(time + i*0.1) * 0.002;
+                    posArr[i3] += dx * 0.006 + wave;
+                    posArr[i3+1] += dy * 0.006 + wave;
+                    mat.color.lerp(new THREE.Color('#4dcad8'), 0.02); // 静止时回归青色
                 }
-                pos[i3] += v.x; pos[i3+1] += v.y;
             }
-            particles.geometry.attributes.position.needsUpdate = true;
+            points.geometry.attributes.position.needsUpdate = true;
             renderer.render(scene, camera);
         }
 
-        // --- 2. AI 引擎处理 ---
-        const hands = new Hands({
-            locateFile: (f) => `https://npm.elemecdn.com/@mediapipe/hands/${f}`
-        });
-
-        hands.setOptions({ maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        // 3. 手势与教学状态机
+        const hands = new Hands({ locateFile: (f) => `https://npm.elemecdn.com/@mediapipe/hands/${f}` });
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.6 });
+        
         hands.onResults(res => {
             if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
-                isHandActive = true;
+                handActive = true;
                 const lm = res.multiHandLandmarks[0][9];
-                targetPos.x = (lm.x - 0.5) * -3; targetPos.y = (0.5 - lm.y) * 2.5;
-                const dist = Math.sqrt(Math.pow(res.multiHandLandmarks[0][4].x - res.multiHandLandmarks[0][8].x, 2) + Math.pow(res.multiHandLandmarks[0][4].y - res.multiHandLandmarks[0][8].y, 2));
-                if(dist < 0.06) { mode = 'strike'; $('msg').innerText = "发劲：气贯长虹"; }
-                else { mode = 'flow'; $('msg').innerText = "云手：圆转如意"; }
+                targetPos.x = (lm.x - 0.5) * -3;
+                targetPos.y = (0.5 - lm.y) * 2.5;
+
+                // 判断发劲（基于手掌张合度与速度）
+                const thumb = res.multiHandLandmarks[0][4];
+                const index = res.multiHandLandmarks[0][8];
+                const pinch = Math.sqrt(Math.pow(thumb.x-index.x,2) + Math.pow(thumb.y-index.y,2));
+                
+                if(pinch < 0.06) {
+                    mode = 'strike';
+                    $('m-title').innerText = "瞬时发劲";
+                    $('m-desc').innerText = "蓄力丹田 · 爆发如雷";
+                } else {
+                    mode = 'flow';
+                    $('m-title').innerText = "云手连绵";
+                    $('m-desc').innerText = "以腰带手 · 抽丝不断";
+                }
             } else {
-                isHandActive = false; mode = 'breath'; $('msg').innerText = "请举起手掌感应...";
+                handActive = false;
+                mode = 'breath';
+                $('m-title').innerText = "起势调息";
+                $('m-desc').innerText = "虚领顶劲 · 气沉丹田";
             }
         });
 
-        // --- 3. 启动逻辑 ---
-        window.onload = () => {
-            $('load-info').innerText = "加载完成，请点击下方开启";
-            $('start-btn').style.display = "block";
+        // 启动逻辑
+        window.onload = () => { 
+            $('load-info').style.display = 'none';
+            $('start-btn').style.display = 'block'; 
         };
 
         $('start-btn').onclick = async () => {
             $('mask').style.opacity = '0';
-            setTimeout(() => $('mask').style.display = 'none', 800);
+            setTimeout(() => { $('mask').style.display = 'none'; $('hud').style.display = 'block'; }, 1000);
             
-            try {
-                const cameraUtils = new Camera($('video_src'), {
-                    onFrame: async () => { await hands.send({image: $('video_src')}); },
-                    width: 480, height: 480
-                });
-                cameraUtils.start();
-                initScene();
-            } catch (err) {
-                alert("摄像头开启失败，请检查浏览器权限并确保使用 HTTPS 访问。");
-            }
+            const camUtils = new Camera($('video_src'), {
+                onFrame: async () => { await hands.send({image: $('video_src')}); },
+                width: 480, height: 480
+            });
+            camUtils.start();
+            initScene();
         };
     </script>
 </body>
