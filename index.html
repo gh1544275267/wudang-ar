@@ -1,196 +1,382 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>武当 · 墨韵流光</title>
-    <script src="https://cdn.staticfile.org/three.js/r128/three.min.js"></script>
-    <script src="https://npm.elemecdn.com/@mediapipe/hands/hands.js"></script>
-    <script src="https://npm.elemecdn.com/@mediapipe/camera_utils/camera_utils.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>武当问道 AI - 进阶招式版</title>
+    <!-- 引入 MediaPipe 库 -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+
     <style>
-        :root { --gold: #d4af37; --cyan: #4dcad8; }
-        body { margin: 0; overflow: hidden; background: #000; font-family: "PingFang SC", sans-serif; }
-        #video_src { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: cover; z-index: -1; transform: scaleX(-1); }
-        canvas { position: fixed; top: 0; left: 0; z-index: 1; pointer-events: none; filter: blur(0.5px); }
+        @import url('https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@500&display=swap');
+
+        body {
+            margin: 0; padding: 0; overflow: hidden;
+            background-color: #0d0d0d; font-family: 'Noto Serif SC', serif; color: white;
+        }
+        .container {
+            position: relative; width: 100vw; height: 100vh;
+            display: flex; justify-content: center; align-items: center;
+        }
+        .input_video {
+            position: absolute; width: 100%; height: 100%; object-fit: cover;
+            transform: scaleX(-1); z-index: 0; opacity: 0.5; filter: grayscale(50%) contrast(1.2);
+        }
+        .output_canvas {
+            position: absolute; width: 100%; height: 100%; z-index: 1; transform: scaleX(-1);
+        }
+        .ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10;
+            pointer-events: none; display: flex; flex-direction: column; justify-content: space-between;
+        }
+        .header {
+            padding: 20px; background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .title { font-family: 'Ma Shan Zheng', cursive; font-size: 32px; color: #fff; text-shadow: 0 0 10px rgba(255,255,255,0.3); }
+        .status-badge {
+            background: rgba(20,20,20,0.6); backdrop-filter: blur(5px);
+            padding: 8px 16px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.2);
+            font-size: 14px; display: flex; align-items: center; gap: 8px;
+        }
+        .status-dot { width: 8px; height: 8px; background-color: #e74c3c; border-radius: 50%; transition: 0.3s; }
+        .status-dot.active { background-color: #2ecc71; box-shadow: 0 0 8px #2ecc71; }
         
-        /* 艺术化 UI */
-        #mask {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: radial-gradient(circle at center, #1a1a1a 0%, #000 100%);
-            z-index: 1000; display: flex; flex-direction: column; align-items: center; justify-content: center;
-            transition: opacity 1s;
+        .instruction-panel {
+            padding: 40px 20px; background: linear-gradient(to top, rgba(0,0,0,0.95) 20%, transparent);
+            text-align: center;
         }
-        .logo { color: var(--gold); font-size: 28px; letter-spacing: 12px; margin-bottom: 50px; text-shadow: 0 0 20px rgba(212,175,55,0.4); }
-        #start-btn {
-            background: none; border: 1px solid var(--gold); color: var(--gold);
-            padding: 15px 50px; border-radius: 2px; font-size: 14px; cursor: pointer;
-            letter-spacing: 4px; transition: 0.3s;
+        .move-counter { font-size: 14px; color: #888; letter-spacing: 2px; margin-bottom: 5px; }
+        .move-name { font-family: 'Ma Shan Zheng', cursive; font-size: 56px; margin-bottom: 15px; color: #f1c40f; text-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+        .feedback-box {
+            display: inline-block; background: rgba(255,255,255,0.1); backdrop-filter: blur(10px);
+            padding: 15px 30px; border-radius: 50px; border: 1px solid rgba(255,255,255,0.2);
+            transition: all 0.3s;
         }
-        #start-btn:hover { background: var(--gold); color: #000; }
-        
-        #hud {
-            position: fixed; bottom: 50px; width: 100%; text-align: center;
-            color: #fff; z-index: 100; pointer-events: none;
+        .feedback-text { font-size: 20px; font-weight: bold; color: #ecf0f1; }
+        .progress-bar {
+            height: 4px; background: #333; width: 200px; margin: 10px auto 0; border-radius: 2px; overflow: hidden;
         }
-        .mode-title { font-size: 22px; letter-spacing: 8px; color: var(--gold); text-shadow: 0 0 10px #000; margin-bottom: 5px; }
-        .mode-desc { font-size: 10px; opacity: 0.6; letter-spacing: 2px; }
+        .progress-fill { height: 100%; background: #2ecc71; width: 0%; transition: width 0.1s linear; }
+
+        #loader {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 100;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+        }
+        .spinner { width: 40px; height: 40px; border: 4px solid #333; border-top: 4px solid #fff; border-radius: 50%; animation: spin 1s infinite linear; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
 
-    <div id="mask">
-        <div class="logo">武当 · 墨韵流光</div>
-        <button id="start-btn" style="display: none;">感应开启</button>
-        <div id="load-info" style="color: rgba(255,255,255,0.3); font-size: 10px; margin-top: 20px;">正在同步秘籍资源...</div>
-    </div>
+<div id="loader">
+    <div class="spinner"></div>
+    <p style="margin-top:20px;color:#666">正在加载武当拳谱...</p>
+</div>
 
-    <video id="video_src" playsinline></video>
+<div class="container">
+    <video class="input_video"></video>
+    <canvas class="output_canvas"></canvas>
     
-    <div id="hud" style="display: none;">
-        <div class="mode-title" id="m-title">起势调息</div>
-        <div class="mode-desc" id="m-desc">虚领顶劲 · 气沉丹田</div>
+    <div class="ui-layer">
+        <div class="header">
+            <div class="title">武当 · 问道</div>
+            <div class="status-badge">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">等待连接...</span>
+            </div>
+        </div>
+
+        <div class="instruction-panel">
+            <div class="move-counter" id="progressText">第一式 / 共六式</div>
+            <div class="move-name" id="targetName">太极起势</div>
+            <div class="feedback-box" id="feedbackBox">
+                <div class="feedback-text" id="feedback">全身入画，准备起势</div>
+                <div class="progress-bar"><div class="progress-fill" id="progFill"></div></div>
+            </div>
+        </div>
     </div>
+</div>
 
-    <script>
-        const $ = (id) => document.getElementById(id);
-        let scene, camera, renderer, points, count = 4000;
-        let targetPos = new THREE.Vector3(0, 0, -1.5), smoothPos = new THREE.Vector3(0, 0, -1.5);
-        let mode = 'breath', handActive = false;
-        let lastPos = new THREE.Vector3();
+<script>
+    const videoElement = document.getElementsByClassName('input_video')[0];
+    const canvasElement = document.getElementsByClassName('output_canvas')[0];
+    const ctx = canvasElement.getContext('2d');
+    
+    // UI Elements
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const feedbackEl = document.getElementById('feedback');
+    const targetNameEl = document.getElementById('targetName');
+    const progFill = document.getElementById('progFill');
+    const feedbackBox = document.getElementById('feedbackBox');
+    const progressText = document.getElementById('progressText');
 
-        // 1. 初始化极致视觉场景
-        function initScene() {
-            scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 100);
-            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            document.body.appendChild(renderer.domElement);
+    let isPersonDetected = false;
+    let holdTimer = 0;
+    let currentLessonIdx = 0;
+    const HOLD_THRESHOLD = 50; // 需要保持的帧数 (约1.5-2秒)
 
-            // 制作带有“水墨边缘”的粒子
-            const canvas = document.createElement('canvas');
-            canvas.width = 64; canvas.height = 64;
-            const ctx = canvas.getContext('2d');
-            const g = ctx.createRadialGradient(32,32,0,32,32,32);
-            g.addColorStop(0, 'rgba(255,255,255,1)');
-            g.addColorStop(0.3, 'rgba(255,255,255,0.4)');
-            g.addColorStop(1, 'rgba(255,255,255,0)');
-            ctx.fillStyle = g; ctx.fillRect(0,0,64,64);
-            const tex = new THREE.CanvasTexture(canvas);
-
-            const geo = new THREE.BufferGeometry();
-            const pos = new Float32Array(count * 3);
-            const extra = new Float32Array(count); // 存储每个粒子的独特速度
-            for(let i=0; i<count; i++) {
-                pos[i*3] = (Math.random()-0.5)*2;
-                pos[i*3+1] = (Math.random()-0.5)*2;
-                pos[i*3+2] = -1.5;
-                extra[i] = Math.random();
-            }
-            geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-            
-            const mat = new THREE.PointsMaterial({
-                size: 0.035, map: tex, transparent: true, opacity: 0.7,
-                blending: THREE.AdditiveBlending, depthWrite: false, vertexColors: false
-            });
-            mat.color.set('#4dcad8'); // 初始调息色
-
-            points = new THREE.Points(geo, mat);
-            scene.add(points);
-            loop();
-        }
-
-        // 2. 核心动力学优化：体现气势与转折
-        function loop() {
-            requestAnimationFrame(loop);
-            const time = Date.now() * 0.001;
-            const posArr = points.geometry.attributes.position.array;
-            const mat = points.material;
-
-            // 平滑跟手
-            smoothPos.lerp(targetPos, 0.12);
-
-            for(let i=0; i<count; i++) {
-                const i3 = i * 3;
-                const dx = smoothPos.x - posArr[i3];
-                const dy = smoothPos.y - posArr[i3+1];
-                const dist = Math.sqrt(dx*dx + dy*dy);
-
-                if(mode === 'strike') {
-                    // 【气势】展现：粒子向外爆发
-                    posArr[i3] -= dx * 0.25; 
-                    posArr[i3+1] -= dy * 0.25;
-                    mat.color.lerp(new THREE.Color('#ffffff'), 0.1);
-                    if(Math.abs(posArr[i3]) > 4) { posArr[i3] = smoothPos.x; posArr[i3+1] = smoothPos.y; }
-                } else if(handActive) {
-                    // 【转折】展现：绕手心旋转（云手）
-                    const speed = 0.07;
-                    const rx = dx * Math.cos(speed) - dy * Math.sin(speed);
-                    const ry = dx * Math.sin(speed) + dy * Math.cos(speed);
-                    posArr[i3] += (rx - dx) + dx * 0.04;
-                    posArr[i3+1] += (ry - dy) + dy * 0.04;
-                    mat.color.lerp(new THREE.Color('#d4af37'), 0.05); // 运动时变为金色
-                } else {
-                    // 【气息】展现：缓慢规律收放
-                    const wave = Math.sin(time + i*0.1) * 0.002;
-                    posArr[i3] += dx * 0.006 + wave;
-                    posArr[i3+1] += dy * 0.006 + wave;
-                    mat.color.lerp(new THREE.Color('#4dcad8'), 0.02); // 静止时回归青色
-                }
-            }
-            points.geometry.attributes.position.needsUpdate = true;
-            renderer.render(scene, camera);
-        }
-
-        // 3. 手势与教学状态机
-        const hands = new Hands({ locateFile: (f) => `https://npm.elemecdn.com/@mediapipe/hands/${f}` });
-        hands.setOptions({ maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.6 });
-        
-        hands.onResults(res => {
-            if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
-                handActive = true;
-                const lm = res.multiHandLandmarks[0][9];
-                targetPos.x = (lm.x - 0.5) * -3;
-                targetPos.y = (0.5 - lm.y) * 2.5;
-
-                // 判断发劲（基于手掌张合度与速度）
-                const thumb = res.multiHandLandmarks[0][4];
-                const index = res.multiHandLandmarks[0][8];
-                const pinch = Math.sqrt(Math.pow(thumb.x-index.x,2) + Math.pow(thumb.y-index.y,2));
+    // ==========================================
+    // 核心教学数据：新增更多招式
+    // ==========================================
+    const lessons = [
+        {
+            name: "太极起势",
+            desc: "调息凝神，双臂平举",
+            check: (lm) => {
+                // 检查：手腕高度是否在肩膀和髋部之间，且双臂水平
+                const lWrist = lm[15], rWrist = lm[16];
+                const lShoulder = lm[11], rShoulder = lm[12];
                 
-                if(pinch < 0.06) {
-                    mode = 'strike';
-                    $('m-title').innerText = "瞬时发劲";
-                    $('m-desc').innerText = "蓄力丹田 · 爆发如雷";
-                } else {
-                    mode = 'flow';
-                    $('m-title').innerText = "云手连绵";
-                    $('m-desc').innerText = "以腰带手 · 抽丝不断";
-                }
-            } else {
-                handActive = false;
-                mode = 'breath';
-                $('m-title').innerText = "起势调息";
-                $('m-desc').innerText = "虚领顶劲 · 气沉丹田";
+                // y坐标越小越高
+                if (lWrist.y < lShoulder.y - 0.1 || rWrist.y < rShoulder.y - 0.1) return "沉肩坠肘，手勿过高";
+                if (lWrist.y > lm[23].y || rWrist.y > lm[24].y) return "双臂抬起，平举向前"; // 23,24是髋部
+                return "pass";
             }
+        },
+        {
+            name: "野马分鬃",
+            desc: "左手高探，右手低按，斜向对拉",
+            check: (lm) => {
+                // 左高右低 (假设左野马分鬃)
+                const lWrist = lm[15], rWrist = lm[16];
+                const lShoulder = lm[11];
+                const rHip = lm[24];
+
+                // 左手要在肩膀以上
+                if (lWrist.y > lShoulder.y) return "左手向上斜穿";
+                // 右手要在胯部附近
+                if (rWrist.y < rHip.y - 0.2) return "右手下按至胯旁";
+                // 检查双手横向距离，确保是舒展的
+                if (Math.abs(lWrist.x - rWrist.x) < 0.2) return "展臂扩胸，拉开架势";
+                
+                return "pass";
+            }
+        },
+        {
+            name: "白鹤亮翅",
+            desc: "虚步亮掌，右臂上举，左手护腰",
+            check: (lm) => {
+                const head = lm[0];
+                const rWrist = lm[16], lWrist = lm[15];
+                const lHip = lm[23];
+
+                // 右手要明显高于头顶
+                if (rWrist.y > head.y) return "右臂高举，亮出鹤翅";
+                // 左手要在腰/髋附近
+                if (lWrist.y < lHip.y - 0.2) return "左手下落护腰";
+                return "pass";
+            }
+        },
+        {
+            name: "手挥琵琶",
+            desc: "左手前推，右手护胸，成防御势",
+            check: (lm) => {
+                const lWrist = lm[15], rWrist = lm[16];
+                const lShoulder = lm[11];
+                const centerChest = (lm[11].x + lm[12].x) / 2;
+
+                // 左手要在高处且靠前 (简单的y轴判断)
+                if (lWrist.y > lShoulder.y + 0.1) return "左手立掌向前";
+                // 右手要在胸前 (高度在肩和肘之间)
+                if (rWrist.y < lm[12].y || rWrist.y > lm[14].y + 0.2) return "右手回撤护胸";
+                // 双手要在躯干前方 (x轴接近中心线)
+                if (Math.abs(lWrist.x - rWrist.x) > 0.3) return "双手合抱，勿张太开";
+                return "pass";
+            }
+        },
+        {
+            name: "金鸡独立",
+            desc: "提左膝，右手下按，左手指天",
+            check: (lm) => {
+                const lKnee = lm[25], rKnee = lm[26];
+                const lWrist = lm[15];
+                const head = lm[0];
+
+                // 左膝盖必须明显高于右膝盖
+                if (lKnee.y > rKnee.y - 0.15) return "提起左膝，单腿站稳";
+                // 左手指向天
+                if (lWrist.y > head.y) return "左手指天，顶劲上领";
+                return "pass";
+            }
+        },
+        {
+            name: "收势",
+            desc: "双手按掌，气沉丹田",
+            check: (lm) => {
+                const lWrist = lm[15], rWrist = lm[16];
+                const lHip = lm[23];
+
+                // 双手都要在髋部以下
+                if (lWrist.y < lHip.y || rWrist.y < lHip.y) return "双手下按，气息归元";
+                // 双手靠近
+                if (Math.abs(lWrist.x - rWrist.x) > 0.3) return "双手合拢于腹前";
+                return "pass";
+            }
+        }
+    ];
+
+    // --- MediaPipe 设置 ---
+    function onResults(results) {
+        document.getElementById('loader').style.display = 'none';
+        
+        // 适配屏幕
+        canvasElement.width = window.innerWidth;
+        canvasElement.height = window.innerHeight;
+        ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+        if (results.poseLandmarks) {
+            if (!isPersonDetected) {
+                isPersonDetected = true;
+                statusDot.classList.add('active');
+                statusText.innerText = "气机已连结";
+                statusText.style.color = "#2ecc71";
+            }
+            
+            // 1. 绘制水墨 AR 小人
+            drawInkStyle(results.poseLandmarks);
+            
+            // 2. 判定教学逻辑
+            checkPose(results.poseLandmarks);
+
+        } else {
+            isPersonDetected = false;
+            statusDot.classList.remove('active');
+            statusText.innerText = "搜寻身形...";
+            statusText.style.color = "#fff";
+            holdTimer = 0;
+            updateFeedback("请站立于镜头前，全身入画", "neutral", 0);
+        }
+    }
+
+    // --- 绘制逻辑：优化版水墨风 ---
+    function drawInkStyle(lm) {
+        const w = canvasElement.width, h = canvasElement.height;
+        const p = (i) => ({x: lm[i].x * w, y: lm[i].y * h});
+        
+        ctx.lineCap = "round"; ctx.lineJoin = "round";
+
+        // 辅助画线函数
+        const drawLine = (start, end, width, color, blur) => {
+            ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y);
+            ctx.lineWidth = width; ctx.strokeStyle = color;
+            ctx.shadowBlur = blur; ctx.shadowColor = color;
+            ctx.stroke();
+        };
+
+        const connections = [
+            [11,12],[11,23],[12,24],[23,24], // 躯干
+            [11,13],[13,15],[12,14],[14,16], // 手臂
+            [23,25],[25,27],[24,26],[26,28]  // 腿
+        ];
+
+        // 第一层：白色光晕 (真气)
+        connections.forEach(pair => {
+            drawLine(p(pair[0]), p(pair[1]), 14, "rgba(255,255,255,0.6)", 15);
         });
 
-        // 启动逻辑
-        window.onload = () => { 
-            $('load-info').style.display = 'none';
-            $('start-btn').style.display = 'block'; 
-        };
+        // 第二层：水墨骨架
+        connections.forEach(pair => {
+            // 动态粗细：躯干粗，四肢细
+            const width = (pair[0] >= 11 && pair[0] <= 24) ? 6 : 4; 
+            drawLine(p(pair[0]), p(pair[1]), width, "#2c3e50", 0);
+        });
 
-        $('start-btn').onclick = async () => {
-            $('mask').style.opacity = '0';
-            setTimeout(() => { $('mask').style.display = 'none'; $('hud').style.display = 'block'; }, 1000);
+        // 头部
+        const head = p(0);
+        ctx.beginPath(); ctx.arc(head.x, head.y, 20, 0, Math.PI*2);
+        ctx.fillStyle = "#ecf0f1"; ctx.shadowBlur = 10; ctx.shadowColor = "white"; ctx.fill();
+    }
+
+    // --- 教学逻辑 ---
+    function checkPose(lm) {
+        if(currentLessonIdx >= lessons.length) {
+            updateFeedback("功德圆满，请按F5重新修行", "success", 100);
+            return;
+        }
+
+        const lesson = lessons[currentLessonIdx];
+        targetNameEl.innerText = lesson.name;
+        progressText.innerText = `第 ${currentLessonIdx + 1} 式 / 共 ${lessons.length} 式`;
+
+        const result = lesson.check(lm);
+
+        if (result === "pass") {
+            holdTimer++;
+            const percent = Math.min(100, Math.floor((holdTimer / HOLD_THRESHOLD) * 100));
             
-            const camUtils = new Camera($('video_src'), {
-                onFrame: async () => { await hands.send({image: $('video_src')}); },
-                width: 480, height: 480
-            });
-            camUtils.start();
-            initScene();
-        };
-    </script>
+            updateFeedback(`保持住...气运丹田...`, "success", percent);
+            
+            // 绘制蓄力特效
+            drawEnergy(lm, percent);
+
+            if (holdTimer >= HOLD_THRESHOLD) {
+                // 成功，切换下一关
+                currentLessonIdx++;
+                holdTimer = 0;
+                // 简单的过关特效
+                feedbackEl.innerText = "妙极！";
+            }
+        } else {
+            // 失败或调整中，进度衰减
+            if(holdTimer > 0) holdTimer -= 2;
+            const percent = Math.min(100, Math.floor((holdTimer / HOLD_THRESHOLD) * 100));
+            updateFeedback(result, "warning", percent);
+        }
+    }
+
+    function updateFeedback(text, type, percent) {
+        feedbackEl.innerText = text;
+        progFill.style.width = percent + "%";
+        
+        if(type === "success") {
+            feedbackEl.style.color = "#2ecc71";
+            progFill.style.background = "#2ecc71";
+            feedbackBox.style.borderColor = "#2ecc71";
+        } else if (type === "warning") {
+            feedbackEl.style.color = "#f1c40f";
+            progFill.style.background = "#f1c40f";
+            feedbackBox.style.borderColor = "rgba(255,255,255,0.2)";
+        } else {
+            feedbackEl.style.color = "#ecf0f1";
+        }
+    }
+
+    // 蓄力特效：在胸口处汇聚能量
+    function drawEnergy(lm, percent) {
+        if(percent < 10) return;
+        const w = canvasElement.width, h = canvasElement.height;
+        // 计算胸口中心
+        const cx = (lm[11].x + lm[12].x) / 2 * w;
+        const cy = (lm[11].y + lm[12].y) / 2 * h;
+        
+        ctx.beginPath();
+        ctx.arc(cx, cy, percent * 0.8, 0, Math.PI*2); // 半径随进度变大
+        ctx.fillStyle = `rgba(241, 196, 15, ${percent/200})`; // 透明度渐变
+        ctx.shadowBlur = 20; ctx.shadowColor = "gold";
+        ctx.fill();
+    }
+
+    // --- 启动 ---
+    const pose = new Pose({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`});
+    pose.setOptions({
+        modelComplexity: 1,
+        smoothLandmarks: true,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+    });
+    pose.onResults(onResults);
+
+    const camera = new Camera(videoElement, {
+        onFrame: async () => { await pose.send({image: videoElement}); },
+        width: 1280, height: 720
+    });
+    camera.start();
+
+</script>
 </body>
 </html>
